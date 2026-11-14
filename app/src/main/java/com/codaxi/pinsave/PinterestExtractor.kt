@@ -24,11 +24,15 @@ object PinterestExtractor {
     private val HASH = Regex("""[0-9a-f]{32}""")
     private val RESOLUTION = Regex("""/(\d{3,4})p/""")
 
-    class NoVideoException : IOException("Nenhum vídeo encontrado nesse pin")
+    class NoVideoException : IOException("Nenhum vídeo ou imagem encontrado nesse pin")
 
     /** Primeiro link do Pinterest dentro de um texto qualquer, ou null. */
-    fun findLink(text: CharSequence?): String? =
-        if (text.isNullOrBlank()) null else LINK.find(text)?.value?.trimEnd('.', ',', ')')
+    fun findLink(text: CharSequence?): String? = findLinks(text).firstOrNull()
+
+    /** Todos os links do Pinterest de um texto, sem repetir. */
+    fun findLinks(text: CharSequence?): List<String> =
+        if (text.isNullOrBlank()) emptyList()
+        else LINK.findAll(text).map { it.value.trimEnd('.', ',', ')') }.distinct().toList()
 
     fun pinId(url: String): String? = PIN_ID.find(url)?.groupValues?.get(1)
 
@@ -38,10 +42,7 @@ object PinterestExtractor {
      * que é o do pin principal (a página também traz pins relacionados).
      */
     fun candidates(body: String): List<String> {
-        val clean = body
-            .replace("\\u002F", "/")
-            .replace("\\u002f", "/")
-            .replace("\\/", "/")
+        val clean = unescape(body)
         val all = VIDEO.findAll(clean)
             .map { it.value.replace("http://", "https://") }
             .distinct()
@@ -60,6 +61,71 @@ object PinterestExtractor {
             out.add(it.replace("/hls/", "/720p/").removeSuffix(".m3u8") + ".mp4")
         }
         return out.toList()
+    }
+
+    private fun unescape(body: String) = body
+        .replace("\\u002F", "/")
+        .replace("\\u002f", "/")
+        .replace("\\/", "/")
+
+    private val IMAGE = Regex(
+        """https?://i\.pinimg\.com/(originals|\d+x\d*(?:_RS)?)/((?:[0-9a-f]{2}/){3}[0-9a-f]{32}\.(?:jpe?g|png|gif|webp))"""
+    )
+
+    /**
+     * Imagens do pin, para quando ele não tem vídeo. Um carrossel devolve uma
+     * entrada por imagem; um pin comum devolve uma só.
+     */
+    fun images(body: String): List<Media> {
+        val clean = unescape(body)
+        arrayAfter(clean, "carousel_slots")?.let { slots ->
+            val groups = LinkedHashMap<String, MutableList<MatchResult>>()
+            IMAGE.findAll(slots).forEach { groups.getOrPut(it.groupValues[2]) { ArrayList() }.add(it) }
+            if (groups.size >= 2) return groups.values.map { imageMedia(it) }
+        }
+        val main = meta(clean, "og:image")?.let { IMAGE.find(it) }
+            // sem og:image: primeira imagem grande (ignora avatares e miniaturas)
+            ?: IMAGE.findAll(clean).firstOrNull { width(it.groupValues[1]) >= 200 }
+            ?: return emptyList()
+        return listOf(imageMedia(listOf(main)))
+    }
+
+    private fun imageMedia(matches: List<MatchResult>): Media {
+        val urls = LinkedHashSet<String>()
+        urls.add("https://i.pinimg.com/originals/" + matches.first().groupValues[2])
+        matches.sortedByDescending { width(it.groupValues[1]) }
+            .forEach { urls.add(it.value.replace("http://", "https://")) }
+        return Media(false, urls.toList())
+    }
+
+    private fun width(dir: String): Int =
+        if (dir == "originals") Int.MAX_VALUE else dir.substringBefore('x').toIntOrNull() ?: 0
+
+    /** Trecho "[ ... ]" que vem logo depois de uma chave JSON, ou null. */
+    private fun arrayAfter(text: String, key: String): String? {
+        var from = 0
+        while (true) {
+            val k = text.indexOf(key, from)
+            if (k < 0) return null
+            var i = k + key.length
+            while (i < text.length && (text[i] == ':' || text[i] == '"' || text[i] == '\\' || text[i].isWhitespace())) i++
+            if (i < text.length && text[i] == '[') {
+                var depth = 0
+                var j = i
+                while (j < text.length) {
+                    when (text[j]) {
+                        '[' -> depth++
+                        ']' -> {
+                            depth--
+                            if (depth == 0) return text.substring(i, j + 1)
+                        }
+                    }
+                    j++
+                }
+                return null
+            }
+            from = k + key.length
+        }
     }
 
     private fun quality(url: String): Int =
@@ -147,14 +213,18 @@ object PinterestExtractor {
         return htmlUnescape(out.toString())
     }
 
-    class Resolved(val pinId: String?, val videoUrls: List<String>, val caption: String)
+    /** Um arquivo do pin, com os endereços possíveis do melhor para o pior. */
+    class Media(val isVideo: Boolean, val urls: List<String>)
+
+    class Resolved(val pinId: String?, val media: List<Media>, val caption: String)
 
     /** Faz as requisições necessárias. Bloqueante: chame fora da thread principal. */
     fun resolve(link: String): Resolved {
         val (finalUrl, html) = fetch(link)
         val id = pinId(finalUrl) ?: pinId(link)
-        val caption = caption(html)
-        candidates(html).let { if (it.isNotEmpty()) return Resolved(id, it, caption) }
+        var caption = caption(html)
+        var images = images(html)
+        candidates(html).let { if (it.isNotEmpty()) return Resolved(id, listOf(Media(true, it)), caption) }
 
         if (id != null) {
             val fallbacks = listOf(
@@ -171,11 +241,14 @@ object PinterestExtractor {
                 } catch (e: IOException) {
                     continue
                 }
-                candidates(body).let {
-                    if (it.isNotEmpty()) return Resolved(id, it, caption.ifEmpty { caption(body) })
-                }
+                if (caption.isEmpty()) caption = caption(body)
+                candidates(body).let { if (it.isNotEmpty()) return Resolved(id, listOf(Media(true, it)), caption) }
+                images(body).let { if (it.size > images.size) images = it }
             }
         }
+        // Só depois de procurar vídeo em todas as fontes: um pin de vídeo
+        // também tem imagem (a capa), e não queremos baixar a capa por engano.
+        if (images.isNotEmpty()) return Resolved(id, images, caption)
         throw NoVideoException()
     }
 

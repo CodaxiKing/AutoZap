@@ -22,7 +22,6 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -40,17 +39,24 @@ class MainActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val thumbs = HashMap<String, Bitmap>()
-    private var videos: List<Video> = emptyList()
+    private var all: List<Item> = emptyList()
+    private var shown: List<Item> = emptyList()
+    private var onlyUnposted = false
 
     private lateinit var input: EditText
-    private lateinit var watchRow: TextView
+    private lateinit var queueRow: TextView
+    private lateinit var shortcutRow: TextView
     private lateinit var tagsRow: TextView
+    private lateinit var templatesRow: TextView
+    private lateinit var filterAll: Button
+    private lateinit var filterUnposted: Button
     private lateinit var empty: TextView
-    private val adapter = VideoAdapter()
+    private val adapter = ItemAdapter()
 
     private val bg = Color.parseColor("#121316")
     private val card = Color.parseColor("#1D1F24")
     private val accent = Color.parseColor("#FF5A5F")
+    private val green = Color.parseColor("#7BD88F")
     private val textDim = Color.parseColor("#9AA0AA")
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -74,154 +80,187 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
+    private fun settingRow(onClick: () -> Unit) = TextView(this).apply {
+        setTextColor(Color.WHITE)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+        background = rounded(card)
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        setOnClickListener { onClick() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = LinearLayout(this).apply {
+        // Tudo acima da lista vai no cabeçalho dela, para a tela inteira rolar junto.
+        val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(bg)
-            setPadding(dp(16), dp(20), dp(16), 0)
-            fitsSystemWindows = true
+            setPadding(0, dp(20), 0, 0)
         }
 
-        root.addView(TextView(this).apply {
+        header.addView(TextView(this).apply {
             text = "PinSave"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
             typeface = Typeface.DEFAULT_BOLD
         })
-        root.addView(TextView(this).apply {
-            text = "Baixe vídeos do Pinterest e poste no Instagram ou TikTok"
+        header.addView(TextView(this).apply {
+            text = "Baixe do Pinterest e poste no Instagram ou TikTok"
             setTextColor(textDim)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, dp(2), 0, dp(16))
         })
 
-        // --- link + baixar ---
+        // --- links + baixar ---
         input = EditText(this).apply {
-            hint = "Cole o link do pin aqui"
+            hint = "Cole um ou vários links de pins"
             setHintTextColor(textDim)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            isSingleLine = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            imeOptions = EditorInfo.IME_ACTION_GO
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = 4
             background = rounded(card)
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            setOnEditorActionListener { _, _, _ -> startDownload(); true }
         }
-        root.addView(input, LinearLayout.LayoutParams(MATCH, WRAP))
+        header.addView(input, LinearLayout.LayoutParams(MATCH, WRAP))
 
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         actions.addView(
             pill("Colar", card) {
                 val link = Clip.readLink(this)
-                if (link == null) toast("Nenhum link do Pinterest copiado") else input.setText(link)
+                if (link == null) {
+                    toast("Nenhum link do Pinterest copiado")
+                } else {
+                    val current = input.text.toString().trim()
+                    if (!current.contains(link)) input.setText(if (current.isEmpty()) link else "$current\n$link")
+                }
             },
             LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
         )
         actions.addView(pill("Baixar", accent) { startDownload() }, LinearLayout.LayoutParams(0, WRAP, 2f))
-        root.addView(actions, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+        header.addView(actions, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
-        // --- pop-up ao copiar ---
-        watchRow = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            background = rounded(card)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            setOnClickListener { toggleShortcut() }
+        queueRow = TextView(this).apply {
+            setTextColor(green)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(4), dp(10), dp(4), 0)
+            visibility = View.GONE
         }
-        root.addView(watchRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
+        header.addView(queueRow)
 
-        // --- hashtags fixas ---
-        tagsRow = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            background = rounded(card)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            setOnClickListener {
-                editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this@MainActivity)) {
-                    Captions.setHashtags(this@MainActivity, it)
-                    updateTagsRow()
-                }
+        // --- ajustes ---
+        shortcutRow = settingRow { toggleShortcut() }
+        header.addView(shortcutRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
+
+        tagsRow = settingRow {
+            editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this)) {
+                Captions.setHashtags(this, it)
+                updateRows()
             }
         }
-        root.addView(tagsRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+        header.addView(tagsRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        templatesRow = settingRow { manageTemplates() }
+        header.addView(templatesRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
         // --- lista ---
-        root.addView(TextView(this).apply {
-            text = "Vídeos baixados"
+        header.addView(TextView(this).apply {
+            text = "Baixados"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(22), 0, dp(8))
         })
+        filterAll = pill("Todos", card) { setFilter(false) }
+        filterUnposted = pill("Ainda não postei", card) { setFilter(true) }
+        val filters = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(10))
+            addView(filterAll, LinearLayout.LayoutParams(WRAP, dp(38)).apply { rightMargin = dp(8) })
+            addView(filterUnposted, LinearLayout.LayoutParams(WRAP, dp(38)))
+        }
+        header.addView(filters)
+
         empty = TextView(this).apply {
-            text = "Nada por aqui ainda.\n\nNo Pinterest, toque em Compartilhar → Copiar link, " +
-                "ou escolha \"Baixar com PinSave\" na lista de apps."
             setTextColor(textDim)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
-            setPadding(dp(24), dp(40), dp(24), dp(24))
+            setPadding(dp(24), dp(32), dp(24), dp(24))
         }
-        root.addView(empty, LinearLayout.LayoutParams(MATCH, WRAP))
+        header.addView(empty, LinearLayout.LayoutParams(MATCH, WRAP))
+
         val list = ListView(this).apply {
+            setBackgroundColor(bg)
             divider = null
             dividerHeight = 0
             selector = GradientDrawable()
             isVerticalScrollBarEnabled = false
             clipToPadding = false
-            setPadding(0, 0, 0, dp(16))
+            fitsSystemWindows = true
+            itemsCanFocus = true
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            setPadding(dp(16), 0, dp(16), dp(16))
+            addHeaderView(header, null, false)
             adapter = this@MainActivity.adapter
         }
-        root.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f))
-
-        setContentView(root)
+        setContentView(list)
+        setFilter(false)
     }
 
     override fun onResume() {
         super.onResume()
-        refresh()
         if (Shortcut.isOn(this)) Shortcut.show(this)
-        updateShortcutRow()
-        updateTagsRow()
+        updateRows()
+        refresh()
+        showQueue(DownloadService.currentStatus)
+        DownloadService.observer = { status, itemFinished ->
+            showQueue(status)
+            if (itemFinished) refresh()
+        }
     }
 
-    private fun updateTagsRow() {
+    override fun onPause() {
+        DownloadService.observer = null
+        super.onPause()
+    }
+
+    private fun showQueue(status: String?) {
+        queueRow.text = status ?: ""
+        queueRow.visibility = if (status == null) View.GONE else View.VISIBLE
+    }
+
+    private fun updateRows() {
+        val on = Shortcut.isOn(this)
+        shortcutRow.text = if (on) "✓  Atalho na barra de notificações: ativado (toque para desativar)"
+        else "⚡  Ativar atalho na barra de notificações"
+        shortcutRow.setTextColor(if (on) green else Color.WHITE)
+
         val tags = Captions.hashtags(this)
         tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"
+
+        val count = Templates.list(this).size
+        templatesRow.text = if (count == 0) "✎  Criar modelos de legenda" else "✎  Modelos de legenda ($count)"
     }
 
-    /** Diálogo simples com um campo de texto de várias linhas. */
-    private fun editText(title: String, hint: String, current: String, onSave: (String) -> Unit) {
-        val field = EditText(this).apply {
-            setText(current)
-            this.hint = hint
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            minLines = 3
-            maxLines = 8
-            gravity = Gravity.TOP or Gravity.START
-        }
-        val box = LinearLayout(this).apply {
-            setPadding(dp(20), dp(8), dp(20), 0)
-            addView(field, LinearLayout.LayoutParams(MATCH, WRAP))
-        }
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(box)
-            .setPositiveButton("Salvar") { _, _ -> onSave(field.text.toString()) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+    private fun setFilter(unposted: Boolean) {
+        onlyUnposted = unposted
+        filterAll.background = rounded(if (unposted) card else accent, 12)
+        filterUnposted.background = rounded(if (unposted) accent else card, 12)
+        applyFilter()
     }
 
-    private fun editCaption(video: Video) {
-        editText("Legenda", "Escreva a legenda desta publicação", Captions.get(this, video.uri)) {
-            Captions.set(this, video.uri, it)
-            adapter.notifyDataSetChanged()
+    private fun applyFilter() {
+        shown = if (onlyUnposted) all.filter { Posted.get(this, it.uri).isEmpty() } else all
+        empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        empty.text = if (all.isEmpty()) {
+            "Nada por aqui ainda.\n\nNo Pinterest, toque em Compartilhar → Copiar link, " +
+                "ou escolha \"Baixar com PinSave\" na lista de apps."
+        } else {
+            "Tudo que você baixou já foi postado."
         }
+        adapter.notifyDataSetChanged()
     }
 
     /** Com o app em foco dá para ler a área de transferência: oferece o link copiado. */
@@ -232,7 +271,6 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("pinsave", Context.MODE_PRIVATE)
         if (prefs.getString("last_clip", null) == link) return
         prefs.edit().putString("last_clip", link).apply()
-        input.setText(link)
         startActivity(
             Intent(this, PopupActivity::class.java)
                 .putExtra(PopupActivity.EXTRA_LINK, link)
@@ -241,21 +279,19 @@ class MainActivity : Activity() {
     }
 
     private fun startDownload() {
-        val link = PinterestExtractor.findLink(input.text)
-        if (link == null) {
+        val links = PinterestExtractor.findLinks(input.text)
+        if (links.isEmpty()) {
             toast("Cole um link do Pinterest (pin.it/… ou pinterest.com/pin/…)")
             return
         }
-        getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putString("last_clip", link).apply()
+        getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putString("last_clip", links.last()).apply()
         input.setText("")
-        startActivity(Intent(this, PopupActivity::class.java).putExtra(PopupActivity.EXTRA_LINK, link))
-    }
-
-    private fun updateShortcutRow() {
-        val on = Shortcut.isOn(this)
-        watchRow.text = if (on) "✓  Atalho na barra de notificações: ativado (toque para desativar)"
-        else "⚡  Ativar atalho na barra de notificações"
-        watchRow.setTextColor(if (on) Color.parseColor("#7BD88F") else Color.WHITE)
+        if (links.size == 1) {
+            startActivity(Intent(this, PopupActivity::class.java).putExtra(PopupActivity.EXTRA_LINK, links[0]))
+        } else {
+            links.forEach { DownloadService.enqueue(this, it, null) }
+            toast("${links.size} downloads na fila. Eles aparecem na lista quando terminarem.")
+        }
     }
 
     /** Notificação fixa: copiou o link no Pinterest, puxa a barra e toca nela. */
@@ -271,7 +307,7 @@ class MainActivity : Activity() {
             Shortcut.setOn(this, true)
             toast("Pronto: copie o link no Pinterest, puxe a barra de notificações e toque em \"Copiou um link do Pinterest?\"")
         }
-        updateShortcutRow()
+        updateRows()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -282,22 +318,69 @@ class MainActivity : Activity() {
         } else {
             toast("Sem a permissão de notificações o atalho não aparece")
         }
-        updateShortcutRow()
+        updateRows()
+    }
+
+    /** Diálogo simples com um campo de texto de várias linhas. */
+    private fun editText(
+        title: String, hint: String, current: String,
+        templates: Boolean = false, onDelete: (() -> Unit)? = null, onSave: (String) -> Unit
+    ) {
+        val box = CaptionUi.box(this, current, hint, null, templates)
+        val builder = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box.view)
+            .setPositiveButton("Salvar") { _, _ -> onSave(box.field.text.toString()) }
+            .setNegativeButton("Cancelar", null)
+        if (onDelete != null) builder.setNeutralButton("Excluir") { _, _ -> onDelete() }
+        builder.show()
+    }
+
+    private fun editCaption(item: Item) {
+        editText("Legenda", "Escreva a legenda desta publicação", Captions.get(this, item.uri), templates = true) {
+            Captions.set(this, item.uri, it)
+            adapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun manageTemplates() {
+        val list = Templates.list(this)
+        val labels = list.map { Templates.label(it) } + "+ Novo modelo"
+        AlertDialog.Builder(this)
+            .setTitle("Modelos de legenda")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val index = if (which < list.size) which else null
+                editText(
+                    if (index == null) "Novo modelo" else "Editar modelo",
+                    "Texto que você reaproveita nas legendas",
+                    if (index == null) "" else list[index],
+                    onDelete = if (index == null) null else {
+                        {
+                            Templates.put(this, index, "")
+                            updateRows()
+                        }
+                    }
+                ) {
+                    Templates.put(this, index, it)
+                    updateRows()
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     private fun refresh() {
         worker.execute {
-            val found = Videos.list(applicationContext)
+            val found = Library.list(applicationContext)
             main.post {
-                videos = found
-                empty.visibility = if (found.isEmpty()) View.VISIBLE else View.GONE
-                adapter.notifyDataSetChanged()
+                all = found
+                applyFilter()
             }
         }
     }
 
-    private fun loadThumb(video: Video, into: ImageView) {
-        val key = video.uri.toString()
+    private fun loadThumb(item: Item, into: ImageView) {
+        val key = Keys.of(item.uri)
         into.tag = key
         val cached = thumbs[key]
         into.setImageBitmap(cached)
@@ -305,7 +388,7 @@ class MainActivity : Activity() {
         val side = dp(72)
         worker.execute {
             val bmp = try {
-                contentResolver.loadThumbnail(video.uri, Size(side * 2, side * 2), null)
+                contentResolver.loadThumbnail(item.uri, Size(side * 2, side * 2), null)
             } catch (e: Exception) {
                 null
             } ?: return@execute
@@ -316,32 +399,36 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun play(video: Video) {
+    private fun open(item: Item) {
         try {
             startActivity(
                 Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(video.uri, "video/mp4")
+                    .setDataAndType(item.uri, if (item.isImage) "image/*" else "video/mp4")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             )
         } catch (e: Exception) {
-            toast("Nenhum player de vídeo encontrado")
+            toast("Nenhum app encontrado para abrir o arquivo")
         }
     }
 
-    private fun showMenu(anchor: View, video: Video) {
+    private fun showMenu(anchor: View, item: Item) {
+        val posted = Posted.get(this, item.uri).isNotEmpty()
         PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "Assistir")
-            menu.add(0, 4, 0, "Editar legenda")
-            menu.add(0, 2, 1, "Compartilhar em outro app")
-            menu.add(0, 3, 2, "Excluir")
+            menu.add(0, 1, 0, if (item.isImage) "Ver imagem" else "Assistir")
+            menu.add(0, 2, 1, "Editar legenda")
+            if (posted) menu.add(0, 3, 2, "Desmarcar como postado")
+            menu.add(0, 4, 3, "Compartilhar em outro app")
+            menu.add(0, 5, 4, "Excluir")
             setOnMenuItemClickListener {
                 when (it.itemId) {
-                    1 -> play(video)
-                    4 -> editCaption(video)
-                    2 -> Share.post(this@MainActivity, video.uri, Target.OTHER)
+                    1 -> open(item)
+                    2 -> editCaption(item)
                     3 -> {
-                        if (Videos.delete(this@MainActivity, video)) refresh() else toast("Não foi possível excluir")
+                        Posted.clear(this@MainActivity, item.uri)
+                        applyFilter()
                     }
+                    4 -> Share.post(this@MainActivity, listOf(item.uri), Target.OTHER)
+                    5 -> if (Library.delete(this@MainActivity, item)) refresh() else toast("Não foi possível excluir")
                 }
                 true
             }
@@ -356,30 +443,39 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private class Row(val root: View, val thumb: ImageView, val title: TextView, val sub: TextView,
-                      val caption: TextView,
-                      val more: TextView, val insta: Button, val tiktok: Button)
+    private class Row(
+        val root: View, val thumb: ImageView, val title: TextView, val sub: TextView, val badges: TextView,
+        val caption: TextView, val more: TextView, val insta: Button, val tiktok: Button
+    )
 
-    private inner class VideoAdapter : BaseAdapter() {
-        override fun getCount() = videos.size
-        override fun getItem(position: Int) = videos[position]
+    private inner class ItemAdapter : BaseAdapter() {
+        override fun getCount() = shown.size
+        override fun getItem(position: Int) = shown[position]
         override fun getItemId(position: Int) = position.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val row = (convertView?.tag as? Row) ?: buildRow()
-            val v = videos[position]
+            val item = shown[position]
+            val ctx = this@MainActivity
             row.title.text = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                .format(Date(v.addedSec * 1000))
-            row.sub.text = Formatter.formatShortFileSize(this@MainActivity, v.size)
-            val caption = Captions.get(this@MainActivity, v.uri)
+                .format(Date(item.addedSec * 1000))
+            row.sub.text = (if (item.isImage) "Imagem · " else "Vídeo · ") +
+                Formatter.formatShortFileSize(ctx, item.size)
+
+            val posted = Posted.get(ctx, item.uri)
+            row.badges.text = Target.values().filter { it.name in posted }.joinToString("   ") { "✓ ${it.label}" }
+            row.badges.visibility = if (posted.isEmpty()) View.GONE else View.VISIBLE
+
+            val caption = Captions.get(ctx, item.uri)
             row.caption.text = caption.ifEmpty { "Toque para escrever a legenda" }
             row.caption.setTextColor(if (caption.isEmpty()) textDim else Color.parseColor("#D5D8DE"))
-            row.caption.setOnClickListener { editCaption(v) }
-            loadThumb(v, row.thumb)
-            row.thumb.setOnClickListener { play(v) }
-            row.more.setOnClickListener { showMenu(it, v) }
-            row.insta.setOnClickListener { Share.post(this@MainActivity, v.uri, Target.INSTAGRAM) }
-            row.tiktok.setOnClickListener { Share.post(this@MainActivity, v.uri, Target.TIKTOK) }
+            row.caption.setOnClickListener { editCaption(item) }
+
+            loadThumb(item, row.thumb)
+            row.thumb.setOnClickListener { open(item) }
+            row.more.setOnClickListener { showMenu(it, item) }
+            row.insta.setOnClickListener { Share.chooseInstagram(ctx, listOf(item.uri)) }
+            row.tiktok.setOnClickListener { Share.post(ctx, listOf(item.uri), Target.TIKTOK) }
             return row.root
         }
 
@@ -389,7 +485,7 @@ class MainActivity : Activity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 background = rounded(Color.parseColor("#2A2D34"), 10)
                 clipToOutline = true
-                contentDescription = "Assistir vídeo"
+                contentDescription = "Abrir arquivo"
             }
             val title = TextView(ctx).apply {
                 setTextColor(Color.WHITE)
@@ -398,6 +494,11 @@ class MainActivity : Activity() {
             val sub = TextView(ctx).apply {
                 setTextColor(textDim)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            }
+            val badges = TextView(ctx).apply {
+                setTextColor(green)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Typeface.DEFAULT_BOLD
             }
             val caption = TextView(ctx).apply {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
@@ -420,6 +521,7 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 addView(title)
                 addView(sub)
+                addView(badges)
             }
             val top = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -446,7 +548,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, dp(10))
                 addView(cardView, LinearLayout.LayoutParams(MATCH, WRAP))
             }
-            return Row(wrapper, thumb, title, sub, caption, more, insta, tiktok).also { wrapper.tag = it }
+            return Row(wrapper, thumb, title, sub, badges, caption, more, insta, tiktok).also { wrapper.tag = it }
         }
     }
 

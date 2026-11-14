@@ -94,4 +94,48 @@ class PinterestExtractorTest {
         """
         assertEquals("Treino de pernas em casa, sem equipamento", PinterestExtractor.caption(html))
     }
+
+    @Test
+    fun findsEveryLinkOnce() {
+        assertEquals(
+            listOf("https://pin.it/aaa", "https://pin.it/bbb"),
+            PinterestExtractor.findLinks("https://pin.it/aaa\nhttps://pin.it/bbb https://pin.it/aaa")
+        )
+    }
+
+    @Test
+    fun singleImagePin() {
+        val html = """<meta property="og:image" content="https://i.pinimg.com/736x/01/23/45/$h1.jpg">"""
+        val media = PinterestExtractor.images(html)
+        assertEquals(1, media.size)
+        assertEquals(
+            listOf("https://i.pinimg.com/originals/01/23/45/$h1.jpg", "https://i.pinimg.com/736x/01/23/45/$h1.jpg"),
+            media[0].urls
+        )
+        assertEquals(false, media[0].isVideo)
+    }
+
+    @Test
+    fun carouselPinHasOneEntryPerImage() {
+        val json = """
+            {"images":{"orig":{"url":"https://i.pinimg.com/originals/01/23/45/$h1.jpg"}},
+             "carousel_data":{"carousel_slots":[
+               {"images":{"236x":{"url":"https:\/\/i.pinimg.com\/236x\/01\/23\/45\/$h1.jpg"},"736x":{"url":"https:\/\/i.pinimg.com\/736x\/01\/23\/45\/$h1.jpg"}}},
+               {"images":{"736x":{"url":"https://i.pinimg.com/736x/ff/ff/ff/$h2.png"}}}
+             ]},
+             "pinner":{"image":"https://i.pinimg.com/75x75_RS/aa/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"}}
+        """
+        val media = PinterestExtractor.images(json)
+        assertEquals(2, media.size)
+        assertEquals("https://i.pinimg.com/originals/01/23/45/$h1.jpg", media[0].urls[0])
+        assertEquals("https://i.pinimg.com/736x/01/23/45/$h1.jpg", media[0].urls[1])
+        assertEquals("https://i.pinimg.com/736x/ff/ff/ff/$h2.png", media[1].urls[1])
+    }
+
+    @Test
+    fun ignoresAvatarsWhenLookingForTheImage() {
+        val json = """{"a":"https://i.pinimg.com/75x75_RS/aa/aa/aa/$h2.jpg","b":"https://i.pinimg.com/564x/01/23/45/$h1.jpg"}"""
+        assertEquals("https://i.pinimg.com/564x/01/23/45/$h1.jpg", PinterestExtractor.images(json)[0].urls[1])
+        assertTrue(PinterestExtractor.images("<html></html>").isEmpty())
+    }
 }

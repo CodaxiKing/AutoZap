@@ -1,6 +1,6 @@
 # PinSave
 
-App Android para baixar vídeos do Pinterest e postar no Instagram ou no TikTok.
+App Android para baixar vídeos e imagens do Pinterest e postar no Instagram ou no TikTok.
 
 ## Instalar
 
@@ -11,7 +11,7 @@ Requer Android 10 ou mais novo.
 
 ## Como usar
 
-Há três jeitos de baixar um vídeo:
+Há três jeitos de baixar um pin:
 
 - **Atalho na barra de notificações** — abra o PinSave uma vez e toque em "Ativar atalho
   na barra de notificações". Depois, no Pinterest, toque em Compartilhar → Copiar link,
@@ -22,15 +22,33 @@ Há três jeitos de baixar um vídeo:
 - **Abrir o app** — com um link copiado, o PinSave pergunta se quer baixar assim que abre.
   Também dá para colar o link no campo e tocar em Baixar.
 
-Depois do download o app pergunta onde postar (Instagram, TikTok ou outro app) e abre
-o app escolhido já com o vídeo anexado. Os vídeos ficam na galeria, em `Movies/PinSave`,
-e aparecem na lista do app para postar depois.
+Depois do download o app mostra a legenda e pergunta onde postar. No Instagram dá para
+ir direto para Reels, Stories ou Feed. Os arquivos ficam na galeria (`Movies/PinSave` e
+`Pictures/PinSave`) e aparecem na lista do app para postar depois.
+
+### Imagens e carrosséis
+
+Pins sem vídeo são baixados como imagem. Em carrosséis, todas as imagens são baixadas e
+podem ser enviadas juntas.
+
+### Fila de downloads
+
+No pop-up, "Em 2º plano" coloca o download na fila e libera a tela; uma notificação avisa
+quando terminar e abre a legenda. No app, dá para colar vários links de uma vez no campo e
+tocar em Baixar. Para receber os avisos, permita as notificações do PinSave.
+
+### O que já foi postado
+
+Cada item ganha um selo "✓ Instagram" ou "✓ TikTok" quando você o envia para o app, e o
+filtro "Ainda não postei" esconde os que já foram. O selo marca que o arquivo foi enviado
+ao app, não que a publicação foi concluída; dá para desmarcar no menu ⋮.
 
 ### Legendas
 
-Cada vídeo tem a sua legenda. Ela começa com o título e a descrição do pin (quando o
+Cada arquivo tem a sua legenda. Ela começa com o título e a descrição do pin (quando o
 Pinterest fornece) e pode ser editada no pop-up, logo depois do download, ou na lista do
-app. Em "Hashtags fixas" você define hashtags que entram no fim de toda legenda.
+app. Em "Hashtags fixas" você define hashtags que entram no fim de toda legenda, e em
+"Modelos de legenda" você guarda textos prontos para inserir com um toque.
 
 Instagram e TikTok não aceitam legenda enviada por outro app, então ao tocar em postar
 o PinSave copia a legenda: é só colar no campo de legenda da publicação.

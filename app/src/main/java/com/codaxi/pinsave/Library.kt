@@ -1,0 +1,268 @@
+package com.codaxi.pinsave
+
+import android.content.ClipboardManager
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.net.Uri
+import android.provider.MediaStore
+import org.json.JSONArray
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+
+/** Um vídeo ou imagem baixado. */
+class Item(val uri: Uri, val name: String, val addedSec: Long, val size: Long, val isImage: Boolean)
+
+class Progress(val index: Int, val count: Int, val pct: Int)
+
+/** Baixa os arquivos de um pin para a galeria e lista o que já foi baixado. */
+object Library {
+    private const val VIDEO_DIR = "Movies/PinSave"
+    private const val IMAGE_DIR = "Pictures/PinSave"
+
+    /**
+     * Bloqueante. Devolve um arquivo para pins comuns e vários para carrosséis.
+     * [Progress.pct] vai de 0 a 100, ou -1 quando o tamanho é desconhecido.
+     */
+    fun download(ctx: Context, link: String, onProgress: (Progress) -> Unit): List<Uri> {
+        onProgress(Progress(0, 1, -1))
+        val resolved = PinterestExtractor.resolve(link)
+        val count = resolved.media.size
+        val out = ArrayList<Uri>()
+        var last: IOException = PinterestExtractor.NoVideoException()
+
+        resolved.media.forEachIndexed { index, media ->
+            for (url in media.urls) {
+                try {
+                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index) {
+                        onProgress(Progress(index, count, it))
+                    }
+                    Captions.set(ctx, uri, resolved.caption)
+                    out.add(uri)
+                    break
+                } catch (e: IOException) {
+                    last = e
+                }
+            }
+        }
+        if (out.isEmpty()) throw last
+        return out
+    }
+
+    private fun save(
+        ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int, onProgress: (Int) -> Unit
+    ): Uri {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 15000
+        conn.readTimeout = 30000
+        conn.setRequestProperty("User-Agent", PinterestExtractor.USER_AGENT)
+        conn.setRequestProperty("Referer", "https://www.pinterest.com/")
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) throw IOException("Servidor respondeu $code")
+            if (conn.contentType?.startsWith("text") == true) throw IOException("Resposta não é mídia")
+            val total = conn.contentLengthLong
+
+            val ext = url.substringAfterLast('.').lowercase()
+            val mime = when {
+                isVideo -> "video/mp4"
+                ext == "png" -> "image/png"
+                ext == "gif" -> "image/gif"
+                ext == "webp" -> "image/webp"
+                else -> "image/jpeg"
+            }
+            val collection = if (isVideo) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            }
+            val resolver = ctx.contentResolver
+            val values = ContentValues().apply {
+                put(
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    "pin_${pinId ?: "midia"}_${System.currentTimeMillis()}_${index + 1}.${if (isVideo) "mp4" else ext}"
+                )
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) VIDEO_DIR else IMAGE_DIR)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(collection, values) ?: throw IOException("Não foi possível criar o arquivo")
+            try {
+                var written = 0L
+                var lastPct = -2
+                val out = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar o arquivo")
+                out.use { o ->
+                    conn.inputStream.use { input ->
+                        val buf = ByteArray(65536)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            o.write(buf, 0, n)
+                            written += n
+                            val pct = if (total > 0) (written * 100 / total).toInt() else -1
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                onProgress(pct)
+                            }
+                        }
+                    }
+                }
+                if (written < 512) throw IOException("Arquivo vazio")
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                return uri
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                throw if (e is IOException) e else IOException(e)
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** Tudo que o app baixou, do mais novo para o mais antigo. */
+    fun list(ctx: Context): List<Item> {
+        val out = ArrayList<Item>()
+        query(ctx, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, VIDEO_DIR, false, out)
+        query(ctx, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, IMAGE_DIR, true, out)
+        out.sortByDescending { it.addedSec }
+        return out
+    }
+
+    private fun query(ctx: Context, base: Uri, dir: String, isImage: Boolean, out: MutableList<Item>) {
+        val cols = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.SIZE
+        )
+        try {
+            ctx.contentResolver.query(
+                base, cols, "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("$dir%"), null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    out.add(
+                        Item(
+                            ContentUris.withAppendedId(base, c.getLong(0)),
+                            c.getString(1) ?: "",
+                            c.getLong(2),
+                            c.getLong(3),
+                            isImage
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // sem acesso à galeria: lista vazia
+        }
+    }
+
+    fun delete(ctx: Context, item: Item): Boolean = try {
+        (ctx.contentResolver.delete(item.uri, null, null) > 0).also {
+            if (it) {
+                Captions.set(ctx, item.uri, "")
+                Posted.clear(ctx, item.uri)
+            }
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/**
+ * Chave estável de um arquivo. O mesmo arquivo aparece com endereços
+ * diferentes (external / external_primary), então usamos tipo + id.
+ */
+object Keys {
+    fun isImage(uri: Uri) = uri.toString().contains("/images/")
+    fun of(uri: Uri) = (if (isImage(uri)) "i" else "v") + (uri.lastPathSegment ?: "")
+}
+
+/** Legenda de cada arquivo e as hashtags fixas, guardadas no aparelho. */
+object Captions {
+    private const val HASHTAGS = "__hashtags"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("captions", Context.MODE_PRIVATE)
+
+    fun get(ctx: Context, uri: Uri): String = prefs(ctx).getString(Keys.of(uri), "") ?: ""
+
+    fun set(ctx: Context, uri: Uri, text: String) {
+        val e = prefs(ctx).edit()
+        if (text.isBlank()) e.remove(Keys.of(uri)) else e.putString(Keys.of(uri), text.trim())
+        e.apply()
+    }
+
+    fun hashtags(ctx: Context): String = prefs(ctx).getString(HASHTAGS, "") ?: ""
+
+    fun setHashtags(ctx: Context, text: String) = prefs(ctx).edit().putString(HASHTAGS, text.trim()).apply()
+
+    /** O que vai para a área de transferência: legenda + hashtags fixas. */
+    fun full(ctx: Context, uri: Uri): String =
+        listOf(get(ctx, uri), hashtags(ctx)).filter { it.isNotBlank() }.joinToString("\n\n")
+}
+
+/** Legendas prontas para reaproveitar. */
+object Templates {
+    private const val KEY = "__templates"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("captions", Context.MODE_PRIVATE)
+
+    fun list(ctx: Context): List<String> = try {
+        val arr = JSONArray(prefs(ctx).getString(KEY, "[]"))
+        (0 until arr.length()).map { arr.getString(it) }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun save(ctx: Context, items: List<String>) {
+        val arr = JSONArray()
+        items.forEach { arr.put(it) }
+        prefs(ctx).edit().putString(KEY, arr.toString()).apply()
+    }
+
+    /** [index] null cria um modelo novo; texto vazio apaga o modelo. */
+    fun put(ctx: Context, index: Int?, text: String) {
+        val items = list(ctx).toMutableList()
+        val clean = text.trim()
+        if (index == null) {
+            if (clean.isNotEmpty()) items.add(clean)
+        } else if (index in items.indices) {
+            if (clean.isEmpty()) items.removeAt(index) else items[index] = clean
+        }
+        save(ctx, items)
+    }
+
+    fun label(text: String): String = text.lineSequence().firstOrNull().orEmpty().take(40)
+}
+
+/** Em quais redes cada arquivo já foi enviado para postar. */
+object Posted {
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("posted", Context.MODE_PRIVATE)
+
+    fun get(ctx: Context, uri: Uri): Set<String> = prefs(ctx).getStringSet(Keys.of(uri), null) ?: emptySet()
+
+    fun mark(ctx: Context, uri: Uri, target: Target) {
+        val now = HashSet(get(ctx, uri))
+        now.add(target.name)
+        prefs(ctx).edit().putStringSet(Keys.of(uri), now).apply()
+    }
+
+    fun clear(ctx: Context, uri: Uri) = prefs(ctx).edit().remove(Keys.of(uri)).apply()
+}
+
+object Clip {
+    /** Link do Pinterest na área de transferência (só funciona com o app em foco). */
+    fun readLink(ctx: Context): String? {
+        val clip = try {
+            ctx.getSystemService(ClipboardManager::class.java)?.primaryClip
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        for (i in 0 until clip.itemCount) {
+            PinterestExtractor.findLink(clip.getItemAt(i)?.coerceToText(ctx))?.let { return it }
+        }
+        return null
+    }
+}
