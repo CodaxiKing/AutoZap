@@ -13,12 +13,11 @@ Requer Android 10 ou mais novo.
 
 Há três jeitos de baixar um vídeo:
 
-- **Pop-up ao copiar o link** — no Pinterest, toque em Compartilhar → Copiar link e
-  o PinSave pergunta na hora se você quer baixar. Precisa ser ativado uma vez: abra o
-  PinSave, toque em "Ativar pop-up ao copiar link" e ligue o serviço
-  "PinSave: pop-up ao copiar link" em Acessibilidade. Se o Android mostrar
-  "Configuração restrita", vá em Configurações → Apps → PinSave → ⋮ →
-  Permitir configurações restritas e tente de novo.
+- **Atalho na barra de notificações** — abra o PinSave uma vez e toque em "Ativar atalho
+  na barra de notificações". Depois, no Pinterest, toque em Compartilhar → Copiar link,
+  puxe a barra de notificações e toque em "Copiou um link do Pinterest?": o pop-up
+  pergunta se você quer baixar. Também existe o bloco "Baixar pin" para adicionar nas
+  Configurações rápidas.
 - **Compartilhar** — no Pinterest, toque em Compartilhar → Mais → "Baixar com PinSave".
 - **Abrir o app** — com um link copiado, o PinSave pergunta se quer baixar assim que abre.
   Também dá para colar o link no campo e tocar em Baixar.
@@ -27,11 +26,12 @@ Depois do download o app pergunta onde postar (Instagram, TikTok ou outro app) e
 o app escolhido já com o vídeo anexado. Os vídeos ficam na galeria, em `Movies/PinSave`,
 e aparecem na lista do app para postar depois.
 
-### Por que o serviço de acessibilidade?
+### Por que o pop-up não abre sozinho ao copiar?
 
-Desde o Android 10, apps em segundo plano não podem ler a área de transferência. O
-serviço só percebe o toque em "Copiar link" dentro do Pinterest (não lê a tela nem o
-que você digita) e abre o pop-up, que então consegue ler o link copiado.
+Desde o Android 10, apps em segundo plano não podem ler a área de transferência. O único
+jeito de contornar seria um serviço de acessibilidade, mas o Google Play Protect bloqueia
+a instalação de apps de fora da Play Store que pedem esse acesso. Por isso o pop-up é
+aberto com um toque na notificação.
 
 ## Compilar
 

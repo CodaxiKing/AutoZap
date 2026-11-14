@@ -1,17 +1,19 @@
 package com.codaxi.pinsave
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.text.InputType
 import android.text.format.Formatter
 import android.util.Size
@@ -125,7 +127,7 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             background = rounded(card)
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            setOnClickListener { explainWatch() }
+            setOnClickListener { toggleShortcut() }
         }
         root.addView(watchRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
 
@@ -163,9 +165,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
-        val on = CopyWatchService.isEnabled(this)
-        watchRow.text = if (on) "✓  Pop-up ao copiar link: ativado" else "⚡  Ativar pop-up ao copiar link no Pinterest"
-        watchRow.setTextColor(if (on) Color.parseColor("#7BD88F") else Color.WHITE)
+        if (Shortcut.isOn(this)) Shortcut.show(this)
+        updateShortcutRow()
     }
 
     /** Com o app em foco dá para ler a área de transferência: oferece o link copiado. */
@@ -195,28 +196,38 @@ class MainActivity : Activity() {
         startActivity(Intent(this, PopupActivity::class.java).putExtra(PopupActivity.EXTRA_LINK, link))
     }
 
-    private fun explainWatch() {
-        AlertDialog.Builder(this)
-            .setTitle("Pop-up ao copiar link")
-            .setMessage(
-                "O Android não deixa apps em segundo plano verem o que você copia. " +
-                    "Para o pop-up aparecer na hora, o PinSave usa um serviço de acessibilidade " +
-                    "que só percebe o toque em \"Copiar link\" dentro do Pinterest — ele não lê a tela " +
-                    "nem o que você digita.\n\n" +
-                    "Na próxima tela: Apps instalados (ou Serviços baixados) → " +
-                    "\"PinSave: pop-up ao copiar link\" → Ativar.\n\n" +
-                    "Se aparecer \"Configuração restrita\": abra Configurações → Apps → PinSave → " +
-                    "menu ⋮ → Permitir configurações restritas, e tente de novo."
-            )
-            .setPositiveButton("Abrir configurações") { _, _ ->
-                try {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                } catch (e: Exception) {
-                    toast("Abra Configurações → Acessibilidade")
-                }
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
+    private fun updateShortcutRow() {
+        val on = Shortcut.isOn(this)
+        watchRow.text = if (on) "✓  Atalho na barra de notificações: ativado (toque para desativar)"
+        else "⚡  Ativar atalho na barra de notificações"
+        watchRow.setTextColor(if (on) Color.parseColor("#7BD88F") else Color.WHITE)
+    }
+
+    /** Notificação fixa: copiou o link no Pinterest, puxa a barra e toca nela. */
+    private fun toggleShortcut() {
+        if (Shortcut.isOn(this)) {
+            Shortcut.setOn(this, false)
+        } else if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            return
+        } else {
+            Shortcut.setOn(this, true)
+            toast("Pronto: copie o link no Pinterest, puxe a barra de notificações e toque em \"Copiou um link do Pinterest?\"")
+        }
+        updateShortcutRow()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 1) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            Shortcut.setOn(this, true)
+        } else {
+            toast("Sem a permissão de notificações o atalho não aparece")
+        }
+        updateShortcutRow()
     }
 
     private fun refresh() {

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
         <package android:name="com.instagram.android" />
@@ -51,18 +53,23 @@
             </intent-filter>
         </activity>
 
-        <!-- Detecta o "Copiar link" dentro do Pinterest para abrir o pop-up. -->
-        <service
-            android:name=".CopyWatchService"
-            android:exported="true"
-            android:label="@string/watch_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
             <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/copy_watch" />
+        </receiver>
+
+        <service
+            android:name=".DownloadTile"
+            android:exported="true"
+            android:icon="@drawable/ic_stat"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
     </application>
 </manifest>

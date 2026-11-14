@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -63,11 +62,11 @@ class PopupActivity : Activity() {
                 }
             }
             else -> {
-                // Veio do serviço: o link ainda precisa ser lido da área de
+                // Veio da notificação ou do bloco: o link ainda precisa ser lido da área de
                 // transferência, o que só é permitido com a janela em foco.
                 checking = true
                 attempts = 0
-                main.postDelayed({ if (checking) finish() }, 4000)
+                main.postDelayed({ if (checking) finish() }, 5000)
                 if (hasWindowFocus()) main.postDelayed({ check() }, 250)
             }
         }
@@ -81,21 +80,15 @@ class PopupActivity : Activity() {
     private fun check() {
         if (!checking || isFinishing || isDestroyed) return
         val link = Clip.readLink(this)
-        val now = SystemClock.elapsedRealtime()
         when {
-            link != null && link == lastAsked && now - lastAskedAt < 8000 -> {
-                checking = false
-                finish()
-            }
             link != null -> {
                 checking = false
-                lastAsked = link
-                lastAskedAt = now
                 ask(link)
             }
             ++attempts < 5 -> main.postDelayed({ check() }, 400)
             else -> {
                 checking = false
+                Toast.makeText(this, "Nenhum link do Pinterest copiado", Toast.LENGTH_LONG).show()
                 finish()
             }
         }
@@ -213,7 +206,5 @@ class PopupActivity : Activity() {
         const val ACTION_CHECK = "com.codaxi.pinsave.CHECK_CLIPBOARD"
         const val EXTRA_LINK = "link"
         const val EXTRA_ASK = "ask"
-        private var lastAsked: String? = null
-        private var lastAskedAt = 0L
     }
 }
