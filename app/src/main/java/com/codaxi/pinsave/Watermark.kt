@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit
  * baixo do quadro e meio transparente. Vídeos precisam ser recodificados.
  */
 object Watermark {
-    private const val WIDTH_FRACTION = 0.34f   // largura da logo em relação ao quadro
+    private const val WIDTH_FRACTION = 0.14f   // largura da logo em relação ao quadro
     private const val CENTER_Y = 0.75f         // altura do centro da logo (0 = topo, 1 = base)
     private const val ALPHA = 128              // 50% de transparência
 
