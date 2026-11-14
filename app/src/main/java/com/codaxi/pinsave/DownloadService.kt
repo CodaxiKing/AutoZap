@@ -89,7 +89,8 @@ class DownloadService : Service() {
     }
 
     private fun progress(link: String, p: Progress) {
-        var text = if (total > 1) "Baixando ${finished + 1} de $total" else "Baixando"
+        val verb = if (p.watermark) "Aplicando marca d'água" else "Baixando"
+        var text = if (total > 1) "$verb ${finished + 1} de $total" else verb
         if (p.count > 1) text += " (arquivo ${p.index + 1}/${p.count})"
         status = text
         listeners[link]?.onProgress(text, p.pct)
@@ -208,6 +209,7 @@ class DownloadService : Service() {
         }
 
         fun friendly(e: Exception): String = when (e) {
+            is Watermark.WatermarkException -> e.message ?: "Não foi possível aplicar a marca d'água."
             is InstagramExtractor.InstagramException -> e.message ?: "Não foi possível baixar do Instagram."
             is PinterestExtractor.NoVideoException ->
                 "Não achei vídeo nem imagem nesse pin. Ele pode ser privado ou ter sido removido."

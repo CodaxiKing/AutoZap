@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var queueRow: TextView
     private lateinit var shortcutRow: TextView
     private lateinit var bubbleRow: TextView
+    private lateinit var watermarkRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -160,6 +161,12 @@ class MainActivity : Activity() {
         bubbleRow = settingRow { toggleBubble() }
         header.addView(bubbleRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
+        watermarkRow = settingRow {
+            Watermark.setOn(this, !Watermark.isOn(this))
+            updateRows()
+        }
+        header.addView(watermarkRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         tagsRow = settingRow {
             editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this)) {
                 Captions.setHashtags(this, it)
@@ -248,6 +255,11 @@ class MainActivity : Activity() {
         bubbleRow.text = if (bubble) "✓  Botão flutuante: ativado (toque para desativar)"
         else "●  Ativar botão flutuante (copiou o link, toca na bolinha)"
         bubbleRow.setTextColor(if (bubble) green else Color.WHITE)
+
+        val mark = Watermark.isOn(this)
+        watermarkRow.text = if (mark) "✓  Marca d'água com a logo: ativada (toque para desativar)"
+        else "◇  Ativar marca d'água com a logo nos próximos downloads"
+        watermarkRow.setTextColor(if (mark) green else Color.WHITE)
 
         val tags = Captions.hashtags(this)
         tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"

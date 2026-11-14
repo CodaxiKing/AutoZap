@@ -7,6 +7,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import org.json.JSONArray
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -14,7 +15,8 @@ import java.net.URL
 /** Um vídeo ou imagem baixado. */
 class Item(val uri: Uri, val name: String, val addedSec: Long, val size: Long, val isImage: Boolean)
 
-class Progress(val index: Int, val count: Int, val pct: Int)
+/** [watermark] indica a etapa de aplicar a logo, depois do download. */
+class Progress(val index: Int, val count: Int, val pct: Int, val watermark: Boolean = false)
 
 /** Baixa os arquivos de um pin para a galeria e lista o que já foi baixado. */
 object Library {
@@ -35,12 +37,15 @@ object Library {
         resolved.media.forEachIndexed { index, media ->
             for (url in media.urls) {
                 try {
-                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index) {
-                        onProgress(Progress(index, count, it))
+                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index) { pct, watermark ->
+                        onProgress(Progress(index, count, pct, watermark))
                     }
                     Captions.set(ctx, uri, resolved.caption)
                     out.add(uri)
                     break
+                } catch (e: Watermark.WatermarkException) {
+                    // o arquivo baixou; tentar outro endereço não resolveria
+                    throw e
                 } catch (e: IOException) {
                     last = e
                 }
@@ -51,8 +56,35 @@ object Library {
     }
 
     private fun save(
-        ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int, onProgress: (Int) -> Unit
+        ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int,
+        onProgress: (pct: Int, watermark: Boolean) -> Unit
     ): Uri {
+        // Baixa para um arquivo temporário, aplica a marca d'água e só então grava na galeria.
+        val raw = File.createTempFile("dl", null, ctx.cacheDir)
+        var marked: File? = null
+        try {
+            var ext = fetch(url, raw) { onProgress(it, false) }
+            var file = raw
+            if (Watermark.isOn(ctx) && (isVideo || ext != "gif")) {
+                val out = File.createTempFile("wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
+                marked = out
+                onProgress(-1, true)
+                if (isVideo) {
+                    Watermark.video(ctx, raw, out) { onProgress(it, true) }
+                } else {
+                    ext = Watermark.image(ctx, raw, out, ext)
+                }
+                file = out
+            }
+            return insert(ctx, file, pinId, isVideo, index, ext)
+        } finally {
+            raw.delete()
+            marked?.delete()
+        }
+    }
+
+    /** Baixa [url] para [dst]. Devolve a extensão do arquivo (só importa para imagens). */
+    private fun fetch(url: String, dst: File, onProgress: (Int) -> Unit): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 30000
@@ -63,65 +95,69 @@ object Library {
             if (code !in 200..299) throw IOException("Servidor respondeu $code")
             if (conn.contentType?.startsWith("text") == true) throw IOException("Resposta não é mídia")
             val total = conn.contentLengthLong
-
-            // extensão do caminho, sem os parâmetros que vêm depois de "?"
-            val ext = url.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "jpg").lowercase()
-                .let { if (it in setOf("jpg", "jpeg", "png", "gif", "webp", "heic")) it else "jpg" }
-            val mime = when {
-                isVideo -> "video/mp4"
-                ext == "png" -> "image/png"
-                ext == "gif" -> "image/gif"
-                ext == "webp" -> "image/webp"
-                ext == "heic" -> "image/heic"
-                else -> "image/jpeg"
-            }
-            val collection = if (isVideo) {
-                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            } else {
-                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            }
-            val resolver = ctx.contentResolver
-            val values = ContentValues().apply {
-                put(
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    "pinsave_${pinId ?: "midia"}_${System.currentTimeMillis()}_${index + 1}.${if (isVideo) "mp4" else ext}"
-                )
-                put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) VIDEO_DIR else IMAGE_DIR)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-            val uri = resolver.insert(collection, values) ?: throw IOException("Não foi possível criar o arquivo")
-            try {
-                var written = 0L
-                var lastPct = -2
-                val out = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar o arquivo")
-                out.use { o ->
-                    conn.inputStream.use { input ->
-                        val buf = ByteArray(65536)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            o.write(buf, 0, n)
-                            written += n
-                            val pct = if (total > 0) (written * 100 / total).toInt() else -1
-                            if (pct != lastPct) {
-                                lastPct = pct
-                                onProgress(pct)
-                            }
+            var written = 0L
+            var lastPct = -2
+            dst.outputStream().use { o ->
+                conn.inputStream.use { input ->
+                    val buf = ByteArray(65536)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        o.write(buf, 0, n)
+                        written += n
+                        val pct = if (total > 0) (written * 100 / total).toInt() else -1
+                        if (pct != lastPct) {
+                            lastPct = pct
+                            onProgress(pct)
                         }
                     }
                 }
-                if (written < 512) throw IOException("Arquivo vazio")
-                values.clear()
-                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-                return uri
-            } catch (e: Exception) {
-                resolver.delete(uri, null, null)
-                throw if (e is IOException) e else IOException(e)
             }
+            if (written < 512) throw IOException("Arquivo vazio")
+            // extensão do caminho, sem os parâmetros que vêm depois de "?"
+            return url.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "jpg").lowercase()
+                .let { if (it in setOf("jpg", "jpeg", "png", "gif", "webp", "heic")) it else "jpg" }
         } finally {
             conn.disconnect()
+        }
+    }
+
+    /** Copia [file] para a galeria. */
+    private fun insert(ctx: Context, file: File, pinId: String?, isVideo: Boolean, index: Int, ext: String): Uri {
+        val mime = when {
+            isVideo -> "video/mp4"
+            ext == "png" -> "image/png"
+            ext == "gif" -> "image/gif"
+            ext == "webp" -> "image/webp"
+            ext == "heic" -> "image/heic"
+            else -> "image/jpeg"
+        }
+        val collection = if (isVideo) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        }
+        val resolver = ctx.contentResolver
+        val values = ContentValues().apply {
+            put(
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                "pinsave_${pinId ?: "midia"}_${System.currentTimeMillis()}_${index + 1}.${if (isVideo) "mp4" else ext}"
+            )
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) VIDEO_DIR else IMAGE_DIR)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values) ?: throw IOException("Não foi possível criar o arquivo")
+        try {
+            val out = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar o arquivo")
+            out.use { o -> file.inputStream().use { it.copyTo(o, 65536) } }
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return uri
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw if (e is IOException) e else IOException(e)
         }
     }
 

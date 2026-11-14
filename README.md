@@ -38,6 +38,13 @@ Pinterest: copie o link (ou use Compartilhar → "Baixar com PinSave") e a legen
 vem junto. Contas privadas, Stories e destaques não funcionam, e o Instagram às vezes
 bloqueia o acesso sem login; nesse caso o app avisa e vale tentar de novo mais tarde.
 
+### Marca d'água
+
+Com "Marca d'água com a logo" ativada, todo download novo recebe a logo meio transparente,
+centralizada na parte de baixo do quadro. Em vídeos isso exige recodificar o arquivo no
+aparelho, o que leva mais ou menos o tempo de duração do vídeo. A logo fica em
+`app/src/main/res/drawable-nodpi/watermark.png`. GIFs são salvos sem a marca.
+
 ### Imagens e carrosséis
 
 Pins sem vídeo são baixados como imagem. Em carrosséis, todas as imagens são baixadas e

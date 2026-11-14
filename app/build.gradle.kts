@@ -11,8 +11,8 @@ android {
         applicationId = "com.codaxi.pinsave"
         minSdk = 29
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
     }
 
     // Chave de debug fixa no repositório: assim toda build tem a mesma
@@ -36,5 +36,9 @@ android {
 }
 
 dependencies {
+    // Recodifica vídeos para aplicar a marca d'água.
+    implementation("androidx.media3:media3-transformer:1.3.1")
+    implementation("androidx.media3:media3-effect:1.3.1")
+    implementation("androidx.media3:media3-common:1.3.1")
     testImplementation("junit:junit:4.13.2")
 }
