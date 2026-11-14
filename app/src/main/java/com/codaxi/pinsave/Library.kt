@@ -27,7 +27,7 @@ object Library {
      */
     fun download(ctx: Context, link: String, onProgress: (Progress) -> Unit): List<Uri> {
         onProgress(Progress(0, 1, -1))
-        val resolved = PinterestExtractor.resolve(link)
+        val resolved = Links.resolve(link)
         val count = resolved.media.size
         val out = ArrayList<Uri>()
         var last: IOException = PinterestExtractor.NoVideoException()
@@ -57,19 +57,22 @@ object Library {
         conn.connectTimeout = 15000
         conn.readTimeout = 30000
         conn.setRequestProperty("User-Agent", PinterestExtractor.USER_AGENT)
-        conn.setRequestProperty("Referer", "https://www.pinterest.com/")
+        if (url.contains("pinimg.com")) conn.setRequestProperty("Referer", "https://www.pinterest.com/")
         try {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("Servidor respondeu $code")
             if (conn.contentType?.startsWith("text") == true) throw IOException("Resposta não é mídia")
             val total = conn.contentLengthLong
 
-            val ext = url.substringAfterLast('.').lowercase()
+            // extensão do caminho, sem os parâmetros que vêm depois de "?"
+            val ext = url.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "jpg").lowercase()
+                .let { if (it in setOf("jpg", "jpeg", "png", "gif", "webp", "heic")) it else "jpg" }
             val mime = when {
                 isVideo -> "video/mp4"
                 ext == "png" -> "image/png"
                 ext == "gif" -> "image/gif"
                 ext == "webp" -> "image/webp"
+                ext == "heic" -> "image/heic"
                 else -> "image/jpeg"
             }
             val collection = if (isVideo) {
@@ -81,7 +84,7 @@ object Library {
             val values = ContentValues().apply {
                 put(
                     MediaStore.MediaColumns.DISPLAY_NAME,
-                    "pin_${pinId ?: "midia"}_${System.currentTimeMillis()}_${index + 1}.${if (isVideo) "mp4" else ext}"
+                    "pinsave_${pinId ?: "midia"}_${System.currentTimeMillis()}_${index + 1}.${if (isVideo) "mp4" else ext}"
                 )
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) VIDEO_DIR else IMAGE_DIR)
@@ -253,7 +256,7 @@ object Posted {
 }
 
 object Clip {
-    /** Link do Pinterest na área de transferência (só funciona com o app em foco). */
+    /** Link suportado na área de transferência (só funciona com o app em foco). */
     fun readLink(ctx: Context): String? {
         val clip = try {
             ctx.getSystemService(ClipboardManager::class.java)?.primaryClip
@@ -261,7 +264,7 @@ object Clip {
             null
         } ?: return null
         for (i in 0 until clip.itemCount) {
-            PinterestExtractor.findLink(clip.getItemAt(i)?.coerceToText(ctx))?.let { return it }
+            Links.findLink(clip.getItemAt(i)?.coerceToText(ctx))?.let { return it }
         }
         return null
     }

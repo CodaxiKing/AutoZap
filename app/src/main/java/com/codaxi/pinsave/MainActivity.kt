@@ -109,7 +109,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         })
         header.addView(TextView(this).apply {
-            text = "Baixe do Pinterest e poste no Instagram ou TikTok"
+            text = "Baixe do Pinterest ou Instagram e poste no Instagram ou TikTok"
             setTextColor(textDim)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, dp(2), 0, dp(16))
@@ -117,7 +117,7 @@ class MainActivity : Activity() {
 
         // --- links + baixar ---
         input = EditText(this).apply {
-            hint = "Cole um ou vários links de pins"
+            hint = "Cole um ou vários links (Pinterest ou Instagram)"
             setHintTextColor(textDim)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -134,7 +134,7 @@ class MainActivity : Activity() {
             pill("Colar", card) {
                 val link = Clip.readLink(this)
                 if (link == null) {
-                    toast("Nenhum link do Pinterest copiado")
+                    toast("Nenhum link do Pinterest ou Instagram copiado")
                 } else {
                     val current = input.text.toString().trim()
                     if (!current.contains(link)) input.setText(if (current.isEmpty()) link else "$current\n$link")
@@ -267,7 +267,7 @@ class MainActivity : Activity() {
         shown = if (onlyUnposted) all.filter { Posted.get(this, it.uri).isEmpty() } else all
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         empty.text = if (all.isEmpty()) {
-            "Nada por aqui ainda.\n\nNo Pinterest, toque em Compartilhar → Copiar link, " +
+            "Nada por aqui ainda.\n\nNo Pinterest ou no Instagram, toque em Compartilhar → Copiar link, " +
                 "ou escolha \"Baixar com PinSave\" na lista de apps."
         } else {
             "Tudo que você baixou já foi postado."
@@ -291,9 +291,9 @@ class MainActivity : Activity() {
     }
 
     private fun startDownload() {
-        val links = PinterestExtractor.findLinks(input.text)
+        val links = Links.findLinks(input.text)
         if (links.isEmpty()) {
-            toast("Cole um link do Pinterest (pin.it/… ou pinterest.com/pin/…)")
+            toast("Cole um link do Pinterest ou de um post/Reel do Instagram")
             return
         }
         getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putString("last_clip", links.last()).apply()
@@ -317,7 +317,7 @@ class MainActivity : Activity() {
             return
         } else {
             Shortcut.setOn(this, true)
-            toast("Pronto: copie o link no Pinterest, puxe a barra de notificações e toque em \"Copiou um link do Pinterest?\"")
+            toast("Pronto: copie o link, puxe a barra de notificações e toque em \"Copiou um link?\"")
         }
         updateRows()
     }
@@ -328,14 +328,14 @@ class MainActivity : Activity() {
             BubbleService.setOn(this, false)
         } else if (Settings.canDrawOverlays(this)) {
             BubbleService.setOn(this, true)
-            toast("Pronto: copie o link no Pinterest e toque na bolinha. Arraste para mudar de lugar.")
+            toast("Pronto: copie o link e toque na bolinha. Arraste para mudar de lugar.")
         } else {
             // fica marcado como ligado; a bolinha aparece ao voltar com a permissão dada
             getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putBoolean("bubble", true).apply()
             AlertDialog.Builder(this)
                 .setTitle("Botão flutuante")
                 .setMessage(
-                    "Para a bolinha aparecer por cima do Pinterest, o Android pede a permissão " +
+                    "Para a bolinha aparecer por cima dos outros apps, o Android pede a permissão " +
                         "\"Sobrepor a outros apps\".\n\nNa próxima tela, ative-a para o PinSave e volte.\n\n" +
                         "Se a opção estiver cinza ou aparecer \"Configuração restrita\": Configurações → Apps → " +
                         "PinSave → menu ⋮ → Permitir configurações restritas, e tente de novo."

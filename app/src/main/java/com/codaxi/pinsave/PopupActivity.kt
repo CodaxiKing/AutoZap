@@ -18,7 +18,7 @@ import android.widget.Toast
  *  1. "Quer baixar?"  2. progresso  3. legenda + "Postar no Instagram / TikTok?"
  *
  * Entradas: toque na notificação ou no bloco (ACTION_CHECK, lê o link copiado),
- * "Compartilhar" do Pinterest (ACTION_SEND), um link passado pelo próprio app
+ * "Compartilhar" do Pinterest ou Instagram (ACTION_SEND), um link passado pelo próprio app
  * (EXTRA_LINK) ou um download que terminou em segundo plano (ACTION_DONE).
  */
 class PopupActivity : Activity() {
@@ -56,8 +56,8 @@ class PopupActivity : Activity() {
     }
 
     private fun linkOf(i: Intent): String? = when {
-        i.action == Intent.ACTION_SEND -> PinterestExtractor.findLink(i.getStringExtra(Intent.EXTRA_TEXT))
-        i.hasExtra(EXTRA_LINK) -> PinterestExtractor.findLink(i.getStringExtra(EXTRA_LINK))
+        i.action == Intent.ACTION_SEND -> Links.findLink(i.getStringExtra(Intent.EXTRA_TEXT))
+        i.hasExtra(EXTRA_LINK) -> Links.findLink(i.getStringExtra(EXTRA_LINK))
         else -> null
     }
 
@@ -71,7 +71,7 @@ class PopupActivity : Activity() {
             }
             i.action == Intent.ACTION_SEND -> {
                 if (link == null) {
-                    toast("Isso não é um link do Pinterest")
+                    toast("Isso não é um link do Pinterest nem do Instagram")
                     finish()
                 } else {
                     download(link)
@@ -110,7 +110,7 @@ class PopupActivity : Activity() {
             ++attempts < 5 -> main.postDelayed({ check() }, 400)
             else -> {
                 checking = false
-                toast("Nenhum link do Pinterest copiado")
+                toast("Nenhum link do Pinterest ou Instagram copiado")
                 finish()
             }
         }
@@ -120,7 +120,7 @@ class PopupActivity : Activity() {
         busy = true
         show(
             AlertDialog.Builder(this)
-                .setTitle("Baixar do Pinterest?")
+                .setTitle(if (InstagramExtractor.isInstagram(link)) "Baixar do Instagram?" else "Baixar do Pinterest?")
                 .setMessage(link)
                 .setPositiveButton("Baixar") { _, _ -> download(link) }
                 .setNeutralButton("Em 2º plano") { _, _ ->

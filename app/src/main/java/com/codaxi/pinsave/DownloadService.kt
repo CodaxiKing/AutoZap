@@ -208,6 +208,7 @@ class DownloadService : Service() {
         }
 
         fun friendly(e: Exception): String = when (e) {
+            is InstagramExtractor.InstagramException -> e.message ?: "Não foi possível baixar do Instagram."
             is PinterestExtractor.NoVideoException ->
                 "Não achei vídeo nem imagem nesse pin. Ele pode ser privado ou ter sido removido."
             is java.net.UnknownHostException, is java.net.SocketTimeoutException ->

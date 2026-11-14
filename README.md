@@ -1,6 +1,7 @@
 # PinSave
 
-App Android para baixar vídeos e imagens do Pinterest e postar no Instagram ou no TikTok.
+App Android para baixar vídeos e imagens do Pinterest e do Instagram e repostar no
+Instagram ou no TikTok.
 
 ## Instalar
 
@@ -29,6 +30,13 @@ Há quatro jeitos de baixar um pin:
 Depois do download o app mostra a legenda e pergunta onde postar. No Instagram dá para
 ir direto para Reels, Stories ou Feed. Os arquivos ficam na galeria (`Movies/PinSave` e
 `Pictures/PinSave`) e aparecem na lista do app para postar depois.
+
+### Instagram
+
+Links de posts, Reels e carrosséis de contas públicas funcionam do mesmo jeito que os do
+Pinterest: copie o link (ou use Compartilhar → "Baixar com PinSave") e a legenda original
+vem junto. Contas privadas, Stories e destaques não funcionam, e o Instagram às vezes
+bloqueia o acesso sem login; nesse caso o app avisa e vale tentar de novo mais tarde.
 
 ### Imagens e carrosséis
 

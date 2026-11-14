@@ -187,7 +187,7 @@ object PinterestExtractor {
         }.replace("&quot;", "\"").replace("&apos;", "'")
             .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 
-    private fun jsonString(json: String, key: String): String? {
+    internal fun jsonString(json: String, key: String): String? {
         val raw = Regex("\"" + key + """"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(json)
             ?.groupValues?.get(1) ?: return null
         val out = StringBuilder()
@@ -254,8 +254,13 @@ object PinterestExtractor {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    /** GET seguindo redirecionamentos. Devolve (URL final, corpo). */
-    private fun fetch(start: String): Pair<String, String> {
+    /**
+     * GET (ou POST, se [post] for dado) seguindo redirecionamentos.
+     * Devolve (URL final, corpo); corpo vazio quando o servidor responde erro.
+     */
+    internal fun fetch(
+        start: String, headers: Map<String, String> = emptyMap(), post: String? = null
+    ): Pair<String, String> {
         var url = URL(start)
         repeat(8) {
             val conn = url.openConnection() as HttpURLConnection
@@ -266,6 +271,12 @@ object PinterestExtractor {
                 conn.setRequestProperty("User-Agent", USER_AGENT)
                 conn.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
                 conn.setRequestProperty("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+                headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+                if (post != null) {
+                    conn.requestMethod = "POST"
+                    conn.doOutput = true
+                    conn.outputStream.use { it.write(post.toByteArray(Charsets.UTF_8)) }
+                }
                 val code = conn.responseCode
                 if (code in 300..399) {
                     val loc = conn.getHeaderField("Location")

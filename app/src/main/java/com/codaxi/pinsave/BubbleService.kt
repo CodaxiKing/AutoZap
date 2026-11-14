@@ -66,7 +66,7 @@ class BubbleService : Service() {
                 setStroke((2 * density).toInt(), Color.WHITE)
             }
             alpha = 0.9f
-            contentDescription = "Baixar link copiado do Pinterest"
+            contentDescription = "Baixar link copiado"
         }
         val lp = WindowManager.LayoutParams(
             size, size,

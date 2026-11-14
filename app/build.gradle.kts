@@ -11,8 +11,8 @@ android {
         applicationId = "com.codaxi.pinsave"
         minSdk = 29
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
 
     // Chave de debug fixa no repositório: assim toda build tem a mesma
