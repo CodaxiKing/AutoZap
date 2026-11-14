@@ -23,12 +23,15 @@ object Videos {
 
     /** Bloqueante. [onProgress] recebe 0..100, ou -1 quando o tamanho é desconhecido. */
     fun download(ctx: Context, link: String, onProgress: (Int) -> Unit): Uri {
+        // A legenda inicial vem do título/descrição do pin e fica guardada por vídeo.
         onProgress(-1)
         val resolved = PinterestExtractor.resolve(link)
         var last: Exception = PinterestExtractor.NoVideoException()
         for (videoUrl in resolved.videoUrls) {
             try {
-                return save(ctx, videoUrl, resolved.pinId, onProgress)
+                val uri = save(ctx, videoUrl, resolved.pinId, onProgress)
+                Captions.set(ctx, uri, resolved.caption)
+                return uri
             } catch (e: IOException) {
                 last = e
             }
@@ -125,10 +128,33 @@ object Videos {
     }
 
     fun delete(ctx: Context, video: Video): Boolean = try {
-        ctx.contentResolver.delete(video.uri, null, null) > 0
+        (ctx.contentResolver.delete(video.uri, null, null) > 0).also { if (it) Captions.set(ctx, video.uri, "") }
     } catch (e: Exception) {
         false
     }
+}
+
+/** Legenda de cada vídeo e as hashtags fixas, guardadas no aparelho. */
+object Captions {
+    private const val HASHTAGS = "__hashtags"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("captions", Context.MODE_PRIVATE)
+
+    fun get(ctx: Context, uri: Uri): String = prefs(ctx).getString(uri.toString(), "") ?: ""
+
+    fun set(ctx: Context, uri: Uri, text: String) {
+        val e = prefs(ctx).edit()
+        if (text.isBlank()) e.remove(uri.toString()) else e.putString(uri.toString(), text.trim())
+        e.apply()
+    }
+
+    fun hashtags(ctx: Context): String = prefs(ctx).getString(HASHTAGS, "") ?: ""
+
+    fun setHashtags(ctx: Context, text: String) = prefs(ctx).edit().putString(HASHTAGS, text.trim()).apply()
+
+    /** O que vai para a área de transferência: legenda do vídeo + hashtags fixas. */
+    fun full(ctx: Context, uri: Uri): String =
+        listOf(get(ctx, uri), hashtags(ctx)).filter { it.isNotBlank() }.joinToString("\n\n")
 }
 
 enum class Target(val label: String, val packages: List<String>) {
@@ -145,6 +171,20 @@ object Share {
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         base.clipData = ClipData.newRawUri(null, uri)
+
+        // Instagram e TikTok não aceitam legenda vinda de outro app, então ela
+        // vai para a área de transferência para ser colada na publicação.
+        val caption = Captions.full(activity, uri)
+        if (caption.isNotEmpty()) {
+            base.putExtra(Intent.EXTRA_TEXT, caption)
+            try {
+                activity.getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText("Legenda", caption))
+                Toast.makeText(activity, "Legenda copiada — cole na publicação", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                // sem acesso à área de transferência: segue sem a legenda
+            }
+        }
 
         if (target == Target.OTHER) {
             activity.startActivity(Intent.createChooser(base, "Compartilhar vídeo"))

@@ -66,13 +66,95 @@ object PinterestExtractor {
         RESOLUTION.find(url)?.groupValues?.get(1)?.toIntOrNull()
             ?: if (url.contains("expMp4")) 719 else 0
 
-    class Resolved(val pinId: String?, val videoUrls: List<String>)
+    private val LD_JSON = Regex(
+        """<script[^>]*application/ld\+json[^>]*>(.*?)</script>""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    private val SITE_SUFFIX = Regex("""\s*[|\-–]\s*Pinterest\s*$""", RegexOption.IGNORE_CASE)
+    private val BOILERPLATE = Regex(
+        """discover \(and save|descubra \(e salve|was discovered by|descobriu este pin|pinterest""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * Título e descrição do pin, para servir de legenda inicial.
+     * Devolve "" quando a página só traz os textos genéricos do Pinterest.
+     */
+    fun caption(body: String): String {
+        val blocks = LD_JSON.findAll(body).map { it.groupValues[1] }.toList()
+        val ld = blocks.firstOrNull { it.contains("VideoObject") } ?: blocks.firstOrNull()
+
+        val title = clean(ld?.let { jsonString(it, "headline") } ?: meta(body, "og:title"))
+        val desc = clean(
+            ld?.let { jsonString(it, "description") ?: jsonString(it, "articleBody") }
+                ?: meta(body, "og:description")
+        )
+        val truncated = title.endsWith("…") || title.endsWith("...")
+        val parts = when {
+            desc.isEmpty() -> listOf(title)
+            title.isEmpty() || truncated || desc.startsWith(title.trimEnd('.', '…')) -> listOf(desc)
+            else -> listOf(title, desc)
+        }
+        return parts.filter { it.isNotEmpty() }.joinToString("\n\n").take(2000)
+    }
+
+    private fun clean(raw: String?): String {
+        val s = (raw ?: "").replace(SITE_SUFFIX, "").trim()
+        return if (BOILERPLATE.containsMatchIn(s)) "" else s
+    }
+
+    private fun meta(html: String, property: String): String? {
+        val tag = Regex(
+            """<meta[^>]*(?:property|name)=["']""" + Regex.escape(property) + """["'][^>]*>""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.value ?: return null
+        val content = Regex("""content="([^"]*)"""").find(tag)?.groupValues?.get(1)
+            ?: Regex("""content='([^']*)'""").find(tag)?.groupValues?.get(1)
+            ?: return null
+        return htmlUnescape(content)
+    }
+
+    private fun htmlUnescape(s: String): String =
+        Regex("""&#(x?)([0-9a-fA-F]+);""").replace(s) { m ->
+            val code = m.groupValues[2].toIntOrNull(if (m.groupValues[1].isEmpty()) 10 else 16)
+            if (code == null || code > 0x10FFFF) m.value else String(Character.toChars(code))
+        }.replace("&quot;", "\"").replace("&apos;", "'")
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+    private fun jsonString(json: String, key: String): String? {
+        val raw = Regex("\"" + key + """"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(json)
+            ?.groupValues?.get(1) ?: return null
+        val out = StringBuilder()
+        var i = 0
+        while (i < raw.length) {
+            val c = raw[i]
+            if (c != '\\' || i + 1 >= raw.length) {
+                out.append(c); i++; continue
+            }
+            val n = raw[i + 1]
+            i += 2
+            when (n) {
+                'n' -> out.append('\n')
+                't' -> out.append(' ')
+                'r' -> {}
+                'u' -> {
+                    val code = raw.substring(i, minOf(i + 4, raw.length)).toIntOrNull(16)
+                    if (code != null) { out.append(code.toChar()); i += 4 }
+                }
+                else -> out.append(n)
+            }
+        }
+        return htmlUnescape(out.toString())
+    }
+
+    class Resolved(val pinId: String?, val videoUrls: List<String>, val caption: String)
 
     /** Faz as requisições necessárias. Bloqueante: chame fora da thread principal. */
     fun resolve(link: String): Resolved {
         val (finalUrl, html) = fetch(link)
         val id = pinId(finalUrl) ?: pinId(link)
-        candidates(html).let { if (it.isNotEmpty()) return Resolved(id, it) }
+        val caption = caption(html)
+        candidates(html).let { if (it.isNotEmpty()) return Resolved(id, it, caption) }
 
         if (id != null) {
             val fallbacks = listOf(
@@ -89,7 +171,9 @@ object PinterestExtractor {
                 } catch (e: IOException) {
                     continue
                 }
-                candidates(body).let { if (it.isNotEmpty()) return Resolved(id, it) }
+                candidates(body).let {
+                    if (it.isNotEmpty()) return Resolved(id, it, caption.ifEmpty { caption(body) })
+                }
             }
         }
         throw NoVideoException()

@@ -7,7 +7,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.view.Gravity
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -16,7 +18,7 @@ import java.util.concurrent.Executors
 
 /**
  * Tela transparente que só mostra diálogos:
- *  1. "Quer baixar esse vídeo?"  2. progresso  3. "Postar no Instagram / TikTok?"
+ *  1. "Quer baixar esse vídeo?"  2. progresso  3. legenda + "Postar no Instagram / TikTok?"
  *
  * Entradas: link copiado (ACTION_CHECK), "Compartilhar" do Pinterest (ACTION_SEND)
  * ou um link passado pelo próprio app (EXTRA_LINK).
@@ -158,19 +160,42 @@ class PopupActivity : Activity() {
 
     private fun done(uri: Uri) {
         if (isFinishing || isDestroyed) return
-        val options = arrayOf("Postar no Instagram", "Postar no TikTok", "Outro app…", "Só salvar")
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val caption = EditText(this).apply {
+            setText(Captions.get(this@PopupActivity, uri))
+            hint = "Escreva a legenda desta publicação"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            minLines = 2
+            maxLines = 6
+            gravity = Gravity.TOP or Gravity.START
+        }
+        val tags = Captions.hashtags(this)
+        val note = TextView(this).apply {
+            text = "A legenda é copiada ao postar: é só colar no Instagram ou TikTok." +
+                if (tags.isNotBlank()) "\nHashtags fixas no final: $tags" else ""
+            textSize = 12f
+            alpha = 0.7f
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(caption, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(note)
+        }
+        fun go(target: Target?) {
+            Captions.set(this, uri, caption.text.toString())
+            if (target != null) Share.post(this, uri, target)
+            finish()
+        }
         show(
             AlertDialog.Builder(this)
-                .setTitle("Vídeo salvo na galeria ✓")
-                .setItems(options) { _, which ->
-                    when (which) {
-                        0 -> Share.post(this, uri, Target.INSTAGRAM)
-                        1 -> Share.post(this, uri, Target.TIKTOK)
-                        2 -> Share.post(this, uri, Target.OTHER)
-                    }
-                    finish()
-                }
-                .setOnCancelListener { finish() }
+                .setTitle("Vídeo salvo ✓  Legenda:")
+                .setView(box)
+                .setPositiveButton("Instagram") { _, _ -> go(Target.INSTAGRAM) }
+                .setNegativeButton("TikTok") { _, _ -> go(Target.TIKTOK) }
+                .setNeutralButton("Só salvar") { _, _ -> go(null) }
+                .setOnCancelListener { go(null) }
                 .create()
         )
     }

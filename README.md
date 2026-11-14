@@ -26,6 +26,15 @@ Depois do download o app pergunta onde postar (Instagram, TikTok ou outro app) e
 o app escolhido já com o vídeo anexado. Os vídeos ficam na galeria, em `Movies/PinSave`,
 e aparecem na lista do app para postar depois.
 
+### Legendas
+
+Cada vídeo tem a sua legenda. Ela começa com o título e a descrição do pin (quando o
+Pinterest fornece) e pode ser editada no pop-up, logo depois do download, ou na lista do
+app. Em "Hashtags fixas" você define hashtags que entram no fim de toda legenda.
+
+Instagram e TikTok não aceitam legenda enviada por outro app, então ao tocar em postar
+o PinSave copia a legenda: é só colar no campo de legenda da publicação.
+
 ### Por que o pop-up não abre sozinho ao copiar?
 
 Desde o Android 10, apps em segundo plano não podem ler a área de transferência. O único

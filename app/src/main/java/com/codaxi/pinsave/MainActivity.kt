@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.text.TextUtils
 import android.text.format.Formatter
 import android.util.Size
 import android.util.TypedValue
@@ -43,6 +44,7 @@ class MainActivity : Activity() {
 
     private lateinit var input: EditText
     private lateinit var watchRow: TextView
+    private lateinit var tagsRow: TextView
     private lateinit var empty: TextView
     private val adapter = VideoAdapter()
 
@@ -131,6 +133,23 @@ class MainActivity : Activity() {
         }
         root.addView(watchRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
 
+        // --- hashtags fixas ---
+        tagsRow = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            background = rounded(card)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setOnClickListener {
+                editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this@MainActivity)) {
+                    Captions.setHashtags(this@MainActivity, it)
+                    updateTagsRow()
+                }
+            }
+        }
+        root.addView(tagsRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         // --- lista ---
         root.addView(TextView(this).apply {
             text = "Vídeos baixados"
@@ -167,6 +186,42 @@ class MainActivity : Activity() {
         refresh()
         if (Shortcut.isOn(this)) Shortcut.show(this)
         updateShortcutRow()
+        updateTagsRow()
+    }
+
+    private fun updateTagsRow() {
+        val tags = Captions.hashtags(this)
+        tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"
+    }
+
+    /** Diálogo simples com um campo de texto de várias linhas. */
+    private fun editText(title: String, hint: String, current: String, onSave: (String) -> Unit) {
+        val field = EditText(this).apply {
+            setText(current)
+            this.hint = hint
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            minLines = 3
+            maxLines = 8
+            gravity = Gravity.TOP or Gravity.START
+        }
+        val box = LinearLayout(this).apply {
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(field, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton("Salvar") { _, _ -> onSave(field.text.toString()) }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun editCaption(video: Video) {
+        editText("Legenda", "Escreva a legenda desta publicação", Captions.get(this, video.uri)) {
+            Captions.set(this, video.uri, it)
+            adapter.notifyDataSetChanged()
+        }
     }
 
     /** Com o app em foco dá para ler a área de transferência: oferece o link copiado. */
@@ -276,11 +331,13 @@ class MainActivity : Activity() {
     private fun showMenu(anchor: View, video: Video) {
         PopupMenu(this, anchor).apply {
             menu.add(0, 1, 0, "Assistir")
+            menu.add(0, 4, 0, "Editar legenda")
             menu.add(0, 2, 1, "Compartilhar em outro app")
             menu.add(0, 3, 2, "Excluir")
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> play(video)
+                    4 -> editCaption(video)
                     2 -> Share.post(this@MainActivity, video.uri, Target.OTHER)
                     3 -> {
                         if (Videos.delete(this@MainActivity, video)) refresh() else toast("Não foi possível excluir")
@@ -300,6 +357,7 @@ class MainActivity : Activity() {
     }
 
     private class Row(val root: View, val thumb: ImageView, val title: TextView, val sub: TextView,
+                      val caption: TextView,
                       val more: TextView, val insta: Button, val tiktok: Button)
 
     private inner class VideoAdapter : BaseAdapter() {
@@ -313,6 +371,10 @@ class MainActivity : Activity() {
             row.title.text = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                 .format(Date(v.addedSec * 1000))
             row.sub.text = Formatter.formatShortFileSize(this@MainActivity, v.size)
+            val caption = Captions.get(this@MainActivity, v.uri)
+            row.caption.text = caption.ifEmpty { "Toque para escrever a legenda" }
+            row.caption.setTextColor(if (caption.isEmpty()) textDim else Color.parseColor("#D5D8DE"))
+            row.caption.setOnClickListener { editCaption(v) }
             loadThumb(v, row.thumb)
             row.thumb.setOnClickListener { play(v) }
             row.more.setOnClickListener { showMenu(it, v) }
@@ -336,6 +398,13 @@ class MainActivity : Activity() {
             val sub = TextView(ctx).apply {
                 setTextColor(textDim)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            }
+            val caption = TextView(ctx).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                maxLines = 3
+                ellipsize = TextUtils.TruncateAt.END
+                background = rounded(Color.parseColor("#16181C"), 10)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
             }
             val more = TextView(ctx).apply {
                 text = "⋮"
@@ -369,6 +438,7 @@ class MainActivity : Activity() {
                 background = rounded(card)
                 setPadding(dp(12), dp(12), dp(12), dp(12))
                 addView(top)
+                addView(caption, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
                 addView(buttons, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
             }
             // margem entre os cartões (ListView ignora margens do item)
@@ -376,7 +446,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, dp(10))
                 addView(cardView, LinearLayout.LayoutParams(MATCH, WRAP))
             }
-            return Row(wrapper, thumb, title, sub, more, insta, tiktok).also { wrapper.tag = it }
+            return Row(wrapper, thumb, title, sub, caption, more, insta, tiktok).also { wrapper.tag = it }
         }
     }
 

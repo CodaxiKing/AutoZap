@@ -61,4 +61,37 @@ class PinterestExtractorTest {
     fun imagePinHasNoCandidates() {
         assertTrue(PinterestExtractor.candidates("""<img src="https://i.pinimg.com/736x/aa/bb/cc/x.jpg">""").isEmpty())
     }
+
+    @Test
+    fun captionFromVideoMetadata() {
+        val html = """
+            <meta property="og:title" content="Bolo de cenoura f&#225;cil | Pinterest">
+            <script data-test-id="video-snippet" type="application/ld+json">
+            {"@type":"VideoObject","name":"x","description":"Receita em 3 passos \"sem erro\"\n#bolo #receita","creator":{"name":"Fulana"}}
+            </script>
+        """
+        assertEquals(
+            "Bolo de cenoura fácil\n\nReceita em 3 passos \"sem erro\"\n#bolo #receita",
+            PinterestExtractor.caption(html)
+        )
+    }
+
+    @Test
+    fun captionIgnoresPinterestBoilerplate() {
+        val html = """
+            <meta property="og:title" content="Pinterest">
+            <meta property="og:description" content="This Pin was discovered by Someone. Discover (and save!) your own Pins on Pinterest">
+        """
+        assertEquals("", PinterestExtractor.caption(html))
+        assertEquals("", PinterestExtractor.caption("{}"))
+    }
+
+    @Test
+    fun captionDropsTitleRepeatedInDescription() {
+        val html = """
+            <meta content="Treino de pernas em casa" property="og:title">
+            <meta name="og:description" content="Treino de pernas em casa, sem equipamento">
+        """
+        assertEquals("Treino de pernas em casa, sem equipamento", PinterestExtractor.caption(html))
+    }
 }
