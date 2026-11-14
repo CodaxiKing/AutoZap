@@ -11,8 +11,12 @@ Requer Android 10 ou mais novo.
 
 ## Como usar
 
-Há três jeitos de baixar um pin:
+Há quatro jeitos de baixar um pin:
 
+- **Botão flutuante** (o mais rápido) — abra o PinSave uma vez, toque em "Ativar botão
+  flutuante" e dê a permissão "Sobrepor a outros apps". Uma bolinha fica sobre a tela:
+  no Pinterest, toque em Compartilhar → Copiar link e depois na bolinha, e o download
+  começa. Arraste a bolinha para mudar de lugar.
 - **Atalho na barra de notificações** — abra o PinSave uma vez e toque em "Ativar atalho
   na barra de notificações". Depois, no Pinterest, toque em Compartilhar → Copiar link,
   puxe a barra de notificações e toque em "Copiou um link do Pinterest?": o pop-up
@@ -58,7 +62,7 @@ o PinSave copia a legenda: é só colar no campo de legenda da publicação.
 Desde o Android 10, apps em segundo plano não podem ler a área de transferência. O único
 jeito de contornar seria um serviço de acessibilidade, mas o Google Play Protect bloqueia
 a instalação de apps de fora da Play Store que pedem esse acesso. Por isso o pop-up é
-aberto com um toque na notificação.
+aberto com um toque no botão flutuante ou na notificação.
 
 ## Compilar
 

@@ -13,7 +13,9 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.net.Uri
 import android.os.Looper
+import android.provider.Settings
 import android.text.InputType
 import android.text.TextUtils
 import android.text.format.Formatter
@@ -46,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var queueRow: TextView
     private lateinit var shortcutRow: TextView
+    private lateinit var bubbleRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -154,6 +157,9 @@ class MainActivity : Activity() {
         shortcutRow = settingRow { toggleShortcut() }
         header.addView(shortcutRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
 
+        bubbleRow = settingRow { toggleBubble() }
+        header.addView(bubbleRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         tagsRow = settingRow {
             editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this)) {
                 Captions.setHashtags(this, it)
@@ -212,6 +218,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (Shortcut.isOn(this)) Shortcut.show(this)
+        BubbleService.start(this)
         updateRows()
         refresh()
         showQueue(DownloadService.currentStatus)
@@ -236,6 +243,11 @@ class MainActivity : Activity() {
         shortcutRow.text = if (on) "✓  Atalho na barra de notificações: ativado (toque para desativar)"
         else "⚡  Ativar atalho na barra de notificações"
         shortcutRow.setTextColor(if (on) green else Color.WHITE)
+
+        val bubble = BubbleService.isOn(this)
+        bubbleRow.text = if (bubble) "✓  Botão flutuante: ativado (toque para desativar)"
+        else "●  Ativar botão flutuante (copiou o link, toca na bolinha)"
+        bubbleRow.setTextColor(if (bubble) green else Color.WHITE)
 
         val tags = Captions.hashtags(this)
         tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"
@@ -306,6 +318,39 @@ class MainActivity : Activity() {
         } else {
             Shortcut.setOn(this, true)
             toast("Pronto: copie o link no Pinterest, puxe a barra de notificações e toque em \"Copiou um link do Pinterest?\"")
+        }
+        updateRows()
+    }
+
+    /** Bolinha sobre os outros apps: copiou o link, toca nela e o download começa. */
+    private fun toggleBubble() {
+        if (BubbleService.isOn(this)) {
+            BubbleService.setOn(this, false)
+        } else if (Settings.canDrawOverlays(this)) {
+            BubbleService.setOn(this, true)
+            toast("Pronto: copie o link no Pinterest e toque na bolinha. Arraste para mudar de lugar.")
+        } else {
+            // fica marcado como ligado; a bolinha aparece ao voltar com a permissão dada
+            getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putBoolean("bubble", true).apply()
+            AlertDialog.Builder(this)
+                .setTitle("Botão flutuante")
+                .setMessage(
+                    "Para a bolinha aparecer por cima do Pinterest, o Android pede a permissão " +
+                        "\"Sobrepor a outros apps\".\n\nNa próxima tela, ative-a para o PinSave e volte.\n\n" +
+                        "Se a opção estiver cinza ou aparecer \"Configuração restrita\": Configurações → Apps → " +
+                        "PinSave → menu ⋮ → Permitir configurações restritas, e tente de novo."
+                )
+                .setPositiveButton("Abrir configurações") { _, _ ->
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                        )
+                    } catch (e: Exception) {
+                        toast("Abra Configurações → Apps → PinSave → Sobrepor a outros apps")
+                    }
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
         }
         updateRows()
     }

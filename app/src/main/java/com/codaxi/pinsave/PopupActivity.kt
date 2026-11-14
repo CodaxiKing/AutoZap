@@ -104,7 +104,8 @@ class PopupActivity : Activity() {
         when {
             link != null -> {
                 checking = false
-                ask(link)
+                // o botão flutuante já é um pedido para baixar: não pergunta de novo
+                if (intent.getBooleanExtra(EXTRA_DIRECT, false)) download(link) else ask(link)
             }
             ++attempts < 5 -> main.postDelayed({ check() }, 400)
             else -> {
@@ -267,6 +268,7 @@ class PopupActivity : Activity() {
         const val ACTION_DONE = "com.codaxi.pinsave.DOWNLOAD_DONE"
         const val EXTRA_LINK = "link"
         const val EXTRA_ASK = "ask"
+        const val EXTRA_DIRECT = "direct"
         const val EXTRA_URIS = "uris"
     }
 }

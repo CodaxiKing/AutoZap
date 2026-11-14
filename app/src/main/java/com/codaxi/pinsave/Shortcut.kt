@@ -17,7 +17,7 @@ import android.service.quicksettings.TileService
  */
 object Shortcut {
     private const val CHANNEL = "atalho"
-    private const val ID = 1
+    const val ID = 1
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("pinsave", Context.MODE_PRIVATE)
 
@@ -41,24 +41,29 @@ object Shortcut {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "Atalho para baixar", NotificationManager.IMPORTANCE_LOW)
         )
-        nm.notify(
-            ID,
-            Notification.Builder(ctx, CHANNEL)
-                .setSmallIcon(R.drawable.ic_stat)
-                .setContentTitle("Copiou um link do Pinterest?")
-                .setContentText("Toque aqui para baixar o vídeo")
-                .setContentIntent(popupIntent(ctx))
-                .setOngoing(true)
-                .setShowWhen(false)
-                .build()
+        nm.notify(ID, notification(ctx))
+    }
+
+    fun notification(ctx: Context): Notification {
+        ctx.getSystemService(NotificationManager::class.java)?.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Atalho para baixar", NotificationManager.IMPORTANCE_LOW)
         )
+        return Notification.Builder(ctx, CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("Copiou um link do Pinterest?")
+            .setContentText("Toque aqui para baixar")
+            .setContentIntent(popupIntent(ctx))
+            .setOngoing(true)
+            .setShowWhen(false)
+            .build()
     }
 }
 
-/** Recoloca a notificação depois que o celular reinicia. */
+/** Recoloca a notificação e o botão flutuante depois que o celular reinicia. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (Shortcut.isOn(context)) Shortcut.show(context)
+        BubbleService.start(context)
     }
 }
 
