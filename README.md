@@ -1,59 +1,47 @@
-# 🤖 WhatsApp Spam Bot
+# PinSave
 
-<p align="center">
-</p>
+App Android para baixar vídeos do Pinterest e postar no Instagram ou no TikTok.
 
-Bot desenvolvido em **Python** para automação de envio de mensagens no **WhatsApp Web**.  
-O objetivo do projeto é **praticar automação** e explorar o funcionamento de **bots para web**.  
+## Instalar
 
-⚠️ **Atenção**: Este projeto é apenas para **fins educacionais**.  
-O uso indevido pode violar os **Termos de Serviço do WhatsApp**.
+1. No celular, abra **Releases** deste repositório e baixe o `PinSave.apk`.
+2. Abra o arquivo e permita "instalar apps desconhecidos" quando o Android pedir.
 
----
+Requer Android 10 ou mais novo.
 
-## 🚀 Tecnologias utilizadas
-- **Python 3.x** 
+## Como usar
 
----
+Há três jeitos de baixar um vídeo:
 
-## 📌 Funcionalidades
-- Automatização do WhatsApp Web  
-- Envio de mensagens repetidas (spam controlado)  
+- **Pop-up ao copiar o link** — no Pinterest, toque em Compartilhar → Copiar link e
+  o PinSave pergunta na hora se você quer baixar. Precisa ser ativado uma vez: abra o
+  PinSave, toque em "Ativar pop-up ao copiar link" e ligue o serviço
+  "PinSave: pop-up ao copiar link" em Acessibilidade. Se o Android mostrar
+  "Configuração restrita", vá em Configurações → Apps → PinSave → ⋮ →
+  Permitir configurações restritas e tente de novo.
+- **Compartilhar** — no Pinterest, toque em Compartilhar → Mais → "Baixar com PinSave".
+- **Abrir o app** — com um link copiado, o PinSave pergunta se quer baixar assim que abre.
+  Também dá para colar o link no campo e tocar em Baixar.
 
----
+Depois do download o app pergunta onde postar (Instagram, TikTok ou outro app) e abre
+o app escolhido já com o vídeo anexado. Os vídeos ficam na galeria, em `Movies/PinSave`,
+e aparecem na lista do app para postar depois.
 
-## 🛠️ Como executar
-1. Clone o repositório:  
-   ```bash
-   git clone https://github.com/CodaxiKing/WhatsApp-Spam-Bot.git
+### Por que o serviço de acessibilidade?
 
-Execute o script principal:
+Desde o Android 10, apps em segundo plano não podem ler a área de transferência. O
+serviço só percebe o toque em "Copiar link" dentro do Pinterest (não lê a tela nem o
+que você digita) e abre o pop-up, que então consegue ler o link copiado.
 
-bash
-Copiar código
-python bot.py
-No terminal, insira:
+## Compilar
 
-A mensagem desejada
+```
+./gradlew assembleDebug
+```
 
-O número de repetições
+O APK sai em `app/build/outputs/apk/debug/`. Cada push também gera o APK pelo
+GitHub Actions (`.github/workflows/build.yml`).
 
-📖 Exemplo de uso
-bash
-Copiar código
-Mensagem: Olá 👋
-Repetições: 10
-➡️ O bot enviará 10 vezes "Olá 👋" para o contato que estiver aberto na tela.
+## Aviso
 
-✅ Próximos passos
- Criar interface gráfica simples (Tkinter/PyQt)
-
- Adicionar delay randômico para evitar bloqueio
-
- Implementar múltiplos contatos em lista
-
- Criar versão com envio de mídia (imagens/áudios)
-
-📄 Licença
-Este projeto foi criado apenas para aprendizado.
-Não me responsabilizo por usos indevidos. 🚫
+Baixe e reposte apenas vídeos seus ou que você tenha permissão para usar.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PinSave</string>
+    <string name="share_label">Baixar com PinSave</string>
+    <string name="watch_label">PinSave: pop-up ao copiar link</string>
+    <string name="watch_desc">Percebe quando você toca em \"Copiar link\" no Pinterest e abre um pop-up perguntando se quer baixar o vídeo. Não lê o conteúdo da tela nem o que você digita.</string>
+</resources>
