@@ -60,13 +60,13 @@ object Library {
         onProgress: (pct: Int, watermark: Boolean) -> Unit
     ): Uri {
         // Baixa para um arquivo temporário, aplica a marca d'água e só então grava na galeria.
-        val raw = File.createTempFile("dl", null, ctx.cacheDir)
+        val raw = File.createTempFile("pinsave_dl", null, ctx.cacheDir)
         var marked: File? = null
         try {
             var ext = fetch(url, raw) { onProgress(it, false) }
             var file = raw
             if (Watermark.isOn(ctx) && (isVideo || ext != "gif")) {
-                val out = File.createTempFile("wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
+                val out = File.createTempFile("pinsave_wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
                 marked = out
                 onProgress(-1, true)
                 if (isVideo) {
