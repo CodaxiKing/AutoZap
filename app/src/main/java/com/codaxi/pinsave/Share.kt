@@ -161,6 +161,15 @@ object CaptionUi {
                 setOnClickListener { pick(activity, field) }
             })
         }
+        if (templates) {
+            layout.addView(TextView(activity).apply {
+                text = "✨ Gerar legenda com IA"
+                textSize = 14f
+                setTextColor(Color.parseColor("#FF5A5F"))
+                setPadding(0, pad / 3, 0, pad / 3)
+                setOnClickListener { askAi(activity, field, this) }
+            })
+        }
         layout.addView(
             field,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -173,6 +182,37 @@ object CaptionUi {
             })
         }
         return Box(layout, field)
+    }
+
+    /** Pede uma legenda à IA usando o que já está no campo como referência. */
+    private fun askAi(activity: Activity, field: EditText, button: TextView) {
+        val key = AiCaptions.key(activity)
+        if (key.isBlank()) {
+            Toast.makeText(
+                activity, "Cole sua chave da OpenAI em \"Legendas com IA\", na tela principal do PinSave",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        val reference = field.text.toString()
+        button.text = "✨ Gerando…"
+        button.isEnabled = false
+        Thread {
+            val result = try {
+                AiCaptions.generate(key, "", reference)
+            } catch (e: Exception) {
+                null to (e.message ?: "Não foi possível gerar a legenda.")
+            }
+            activity.runOnUiThread {
+                button.text = "✨ Gerar legenda com IA"
+                button.isEnabled = true
+                if (result is String) {
+                    field.setText(result)
+                } else if (result is Pair<*, *>) {
+                    Toast.makeText(activity, result.second.toString(), Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
     }
 
     private fun pick(activity: Activity, field: EditText) {

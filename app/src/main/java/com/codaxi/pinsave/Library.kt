@@ -52,6 +52,8 @@ object Library {
             }
         }
         if (out.isEmpty()) throw last
+        // com a chave da OpenAI configurada, a legenda original vira só referência
+        AiCaptions.auto(ctx, out, phrase.orEmpty(), resolved.caption)
         return out
     }
 
@@ -71,6 +73,12 @@ object Library {
             }
             Captions.set(ctx, uri, caption)
             out.add(uri)
+        }
+        // Se a legenda é só a frase (com ou sem texto extra), a IA escreve uma de verdade.
+        val first = clips.firstOrNull()?.second.orEmpty().trim()
+        val typed = caption.trim()
+        if (typed.isEmpty() || typed.startsWith(first)) {
+            AiCaptions.auto(ctx, out, clips.joinToString(" / ") { it.second }, "", typed.removePrefix(first))
         }
         return out
     }

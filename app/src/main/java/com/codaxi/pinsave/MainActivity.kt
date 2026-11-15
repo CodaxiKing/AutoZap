@@ -53,6 +53,7 @@ class MainActivity : Activity() {
     private lateinit var watermarkRow: TextView
     private lateinit var phraseRow: TextView
     private lateinit var reminderRow: TextView
+    private lateinit var aiRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -198,6 +199,33 @@ class MainActivity : Activity() {
         }
         header.addView(phraseRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
+        aiRow = settingRow {
+            editText(
+                "Legendas com IA",
+                "Cole aqui a chave da OpenAI (sk-…)",
+                "",
+                onDelete = if (AiCaptions.isOn(this)) {
+                    {
+                        AiCaptions.setKey(this, "")
+                        updateRows()
+                    }
+                } else {
+                    null
+                }
+            ) { typed ->
+                val key = typed.trim()
+                if (key.isEmpty()) return@editText
+                if (!key.startsWith("sk-") || key.length < 40) {
+                    toast("Essa chave parece incompleta")
+                } else {
+                    AiCaptions.setKey(this, key)
+                    toast("Chave salva só neste aparelho. As próximas legendas já vêm prontas.")
+                    updateRows()
+                }
+            }
+        }
+        header.addView(aiRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         reminderRow = settingRow { manageReminders() }
         header.addView(reminderRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
@@ -300,6 +328,11 @@ class MainActivity : Activity() {
         phraseRow.text = if (asks) "✓  Pedir a frase do vídeo antes de baixar: ativado"
         else "❝  Pedir a frase do vídeo antes de baixar"
         phraseRow.setTextColor(if (asks) green else Color.WHITE)
+
+        val ai = AiCaptions.isOn(this)
+        aiRow.text = if (ai) "✓  Legendas com IA: ativadas (chave …${AiCaptions.key(this).takeLast(4)})"
+        else "✨  Ativar legendas com IA (chave da OpenAI)"
+        aiRow.setTextColor(if (ai) green else Color.WHITE)
 
         val times = Reminders.times(this)
         reminderRow.text = if (times.isEmpty()) "⏰  Criar lembretes de postagem"

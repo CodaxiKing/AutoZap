@@ -38,6 +38,17 @@ Pinterest: copie o link (ou use Compartilhar → "Baixar com PinSave") e a legen
 vem junto. Contas privadas, Stories e destaques não funcionam, e o Instagram às vezes
 bloqueia o acesso sem login; nesse caso o app avisa e vale tentar de novo mais tarde.
 
+### Legendas com IA
+
+Em "Legendas com IA" você cola uma chave da API da OpenAI. Com ela, todo download e todo
+vídeo ou carrossel criado já vem com uma legenda escrita pela IA no tom da página, com
+hashtags. A frase do vídeo e a legenda original servem de referência. Em qualquer campo de
+legenda, "✨ Gerar legenda com IA" escreve outra versão.
+
+A chave fica guardada só no aparelho. Não a coloque no código nem no repositório: chave
+exposta em repositório público é usada por terceiros e cancelada pela OpenAI. O uso é
+cobrado na conta da OpenAI (frações de centavo por legenda).
+
 ### Marca d'água
 
 Com "Marca d'água com a logo" ativada, todo download novo recebe a logo meio transparente,

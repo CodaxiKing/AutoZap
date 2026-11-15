@@ -238,6 +238,7 @@ class DownloadService : Service() {
         fun friendly(e: Exception): String = when (e) {
             is Watermark.WatermarkException -> e.message ?: "Não foi possível aplicar a marca d'água."
             is TikTokExtractor.TikTokException -> e.message ?: "Não foi possível baixar do TikTok."
+            is AiCaptions.AiException -> e.message ?: "Não foi possível gerar a legenda."
             is Pexels.PexelsException -> e.message ?: "Não foi possível usar o banco de vídeos."
             is InstagramExtractor.InstagramException -> e.message ?: "Não foi possível baixar do Instagram."
             is PinterestExtractor.NoVideoException ->
