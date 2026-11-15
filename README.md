@@ -1,7 +1,7 @@
 # PinSave
 
-App Android para baixar vídeos e imagens do Pinterest e do Instagram e repostar no
-Instagram ou no TikTok.
+App Android para baixar vídeos e imagens do Pinterest, Instagram e TikTok, criar vídeos
+e carrosséis com frases, e postar no Instagram ou no TikTok.
 
 ## Instalar
 
@@ -45,10 +45,27 @@ centralizada na parte de baixo do quadro. Em vídeos isso exige recodificar o ar
 aparelho, o que leva mais ou menos o tempo de duração do vídeo. A logo fica em
 `app/src/main/res/drawable-nodpi/watermark.png`. GIFs são salvos sem a marca.
 
+### TikTok
+
+Links de vídeos e de posts de fotos do TikTok são baixados sem a marca d'água do TikTok:
+o app busca o arquivo original, não a cópia de download. Vídeos privados não funcionam, e
+o TikTok às vezes bloqueia o acesso; nesse caso o app avisa.
+
+### Criar vídeo e criar carrossel
+
+Os botões "Criar vídeo" e "Criar carrossel" montam conteúdo novo. Você escolhe o tema
+(carros de luxo, dinheiro, relógios, cidade à noite etc.), escreve a frase — no carrossel,
+uma por linha — e o app sugere fundos do banco. "Trocar" busca outro fundo até você gostar.
+O resultado sai escurecido, com a frase no meio e a logo, e a legenda fica pronta para colar.
+
+Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). A chave é
+colada uma vez no app e fica guardada só no aparelho. Os vídeos do banco não têm música.
+
 ### Frase no vídeo
 
 Com "Pedir a frase do vídeo antes de baixar" ativado, o pop-up traz um campo para a frase.
-Ela é gravada em branco, pequena, no meio do quadro. Deixe em branco para baixar sem frase.
+Ela é gravada em branco, pequena, no meio do quadro, e nos vídeos surge aos poucos nos
+primeiros segundos. Deixe em branco para baixar sem frase.
 Em algo já baixado, use o menu ⋮ → "Adicionar frase": o arquivo é substituído pela versão
 com a frase. A frase gravada não pode ser removida depois.
 

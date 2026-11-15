@@ -48,6 +48,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Cria vídeos e carrosséis a partir do banco de vídeos e imagens. -->
+        <activity
+            android:name=".GeneratorActivity"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+
         <!-- Pop-up transparente: pergunta se quer baixar, baixa e oferece postar. -->
         <activity
             android:name=".PopupActivity"

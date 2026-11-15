@@ -51,7 +51,7 @@ object Shortcut {
         return Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Copiou um link?")
-            .setContentText("Pinterest ou Instagram: toque aqui para baixar")
+            .setContentText("Pinterest, Instagram ou TikTok: toque aqui para baixar")
             .setContentIntent(popupIntent(ctx))
             .setOngoing(true)
             .setShowWhen(false)

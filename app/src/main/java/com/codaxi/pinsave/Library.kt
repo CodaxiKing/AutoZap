@@ -37,7 +37,7 @@ object Library {
         resolved.media.forEachIndexed { index, media ->
             for (url in media.urls) {
                 try {
-                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index, phrase) { pct, watermark ->
+                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index, phrase, resolved.headers) { pct, watermark ->
                         onProgress(Progress(index, count, pct, watermark))
                     }
                     Captions.set(ctx, uri, resolved.caption)
@@ -55,26 +55,48 @@ object Library {
         return out
     }
 
+    /**
+     * Monta conteúdo novo a partir do banco: cada item é (endereço do
+     * arquivo, frase). Aplica o visual escuro, a frase e a logo; imagens são
+     * recortadas no formato de carrossel.
+     */
+    fun generate(
+        ctx: Context, clips: List<Pair<String, String>>, isVideo: Boolean, caption: String,
+        onProgress: (Progress) -> Unit
+    ): List<Uri> {
+        val out = ArrayList<Uri>()
+        clips.forEachIndexed { index, (url, phrase) ->
+            val uri = save(ctx, url, "criado", isVideo, index, phrase, emptyMap(), dark = true, carousel = !isVideo) {
+                    pct, watermark -> onProgress(Progress(index, clips.size, pct, watermark))
+            }
+            Captions.set(ctx, uri, caption)
+            out.add(uri)
+        }
+        return out
+    }
+
     private fun save(
         ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int, phrase: String?,
+        headers: Map<String, String>, dark: Boolean = false, carousel: Boolean = false,
         onProgress: (pct: Int, watermark: Boolean) -> Unit
     ): Uri {
-        // Baixa para um arquivo temporário, aplica a marca d'água e só então grava na galeria.
+        // Baixa para um arquivo temporário, edita e só então grava na galeria.
         val raw = File.createTempFile("pinsave_dl", null, ctx.cacheDir)
         var marked: File? = null
         try {
-            var ext = fetch(url, raw) { onProgress(it, false) }
+            var ext = fetch(url, raw, headers) { onProgress(it, false) }
             var file = raw
             val logo = Watermark.isOn(ctx)
             val text = phrase?.trim().orEmpty()
-            if ((logo || text.isNotEmpty()) && (isVideo || ext != "gif")) {
+            val edits = logo || text.isNotEmpty() || dark || carousel
+            if (edits && (isVideo || ext != "gif")) {
                 val out = File.createTempFile("pinsave_wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
                 marked = out
                 onProgress(-1, true)
                 if (isVideo) {
-                    Watermark.video(ctx, raw, out, logo, text) { onProgress(it, true) }
+                    Watermark.video(ctx, raw, out, logo, text, dark) { onProgress(it, true) }
                 } else {
-                    ext = Watermark.image(ctx, raw, out, ext, logo, text)
+                    ext = Watermark.image(ctx, raw, out, ext, logo, text, dark, if (carousel) 4f / 5f else null)
                 }
                 file = out
             }
@@ -125,12 +147,13 @@ object Library {
     }
 
     /** Baixa [url] para [dst]. Devolve a extensão do arquivo (só importa para imagens). */
-    private fun fetch(url: String, dst: File, onProgress: (Int) -> Unit): String {
+    private fun fetch(url: String, dst: File, headers: Map<String, String>, onProgress: (Int) -> Unit): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 30000
         conn.setRequestProperty("User-Agent", PinterestExtractor.USER_AGENT)
         if (url.contains("pinimg.com")) conn.setRequestProperty("Referer", "https://www.pinterest.com/")
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         try {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("Servidor respondeu $code")

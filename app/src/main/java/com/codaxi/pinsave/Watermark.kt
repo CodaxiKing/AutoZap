@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -18,7 +20,11 @@ import android.text.TextPaint
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.Brightness
+import androidx.media3.effect.Contrast
+import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -36,8 +42,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Grava no arquivo a logo (marca d'água meio transparente, centralizada na
- * parte de baixo) e a frase (texto branco no meio do quadro). Vídeos precisam
- * ser recodificados.
+ * parte de baixo) e a frase (texto branco no meio do quadro, que surge aos
+ * poucos nos vídeos). Vídeos precisam ser recodificados.
  */
 object Watermark {
     private const val WIDTH_FRACTION = 0.14f   // largura da logo em relação ao quadro
@@ -45,6 +51,8 @@ object Watermark {
     private const val ALPHA = 128              // 50% de transparência
     private const val PHRASE_SIZE = 0.036f     // altura da letra em relação ao quadro
     private const val PHRASE_WIDTH = 0.72f     // largura máxima da frase
+    private const val FADE_START = 0.4f        // segundo em que a frase começa a surgir
+    private const val FADE_LENGTH = 1.4f       // duração do surgimento, em segundos
 
     class WatermarkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -58,12 +66,6 @@ object Watermark {
     fun asksPhrase(ctx: Context) = prefs(ctx).getBoolean("ask_phrase", true)
 
     fun setAsksPhrase(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("ask_phrase", on).apply()
-
-    /** Desenha a logo e/ou a frase sobre um quadro de [w] x [h] pixels. */
-    private fun draw(ctx: Context, canvas: Canvas, w: Int, h: Int, logo: Boolean, phrase: String) {
-        if (logo) drawLogo(ctx, canvas, w, h)
-        if (phrase.isNotBlank()) drawPhrase(canvas, w, h, phrase.trim())
-    }
 
     private fun drawLogo(ctx: Context, canvas: Canvas, w: Int, h: Int) {
         val logo = BitmapFactory.decodeResource(
@@ -99,15 +101,50 @@ object Watermark {
         canvas.restore()
     }
 
-    /** Grava em [dst] a imagem [src] com a logo e/ou a frase. Devolve a extensão do resultado. */
-    fun image(ctx: Context, src: File, dst: File, ext: String, logo: Boolean, phrase: String): String {
+    /** Escurece e tira um pouco da cor, para o visual "dark" do conteúdo criado no app. */
+    private fun darkPaint(): Paint {
+        val m = ColorMatrix().apply { setSaturation(0.55f) }
+        val scale = 0.72f
+        m.postConcat(ColorMatrix(floatArrayOf(
+            scale, 0f, 0f, 0f, 0f,
+            0f, scale, 0f, 0f, 0f,
+            0f, 0f, scale, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        return Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = ColorMatrixColorFilter(m) }
+    }
+
+    /**
+     * Grava em [dst] a imagem [src] com a logo e/ou a frase. [aspect]
+     * (largura/altura) recorta pelo centro, como nos slides de carrossel.
+     * Devolve a extensão do resultado.
+     */
+    fun image(
+        ctx: Context, src: File, dst: File, ext: String, logo: Boolean, phrase: String,
+        dark: Boolean = false, aspect: Float? = null
+    ): String {
         try {
             val original = BitmapFactory.decodeFile(src.absolutePath)
                 ?: throw WatermarkException("Não foi possível abrir a imagem para editar")
-            val bitmap = original.copy(Bitmap.Config.ARGB_8888, true)
+            var sw = original.width
+            var sh = original.height
+            if (aspect != null) {
+                if (sw.toFloat() / sh > aspect) sw = (sh * aspect).toInt() else sh = (sw / aspect).toInt()
+            }
+            val from = Rect(
+                (original.width - sw) / 2, (original.height - sh) / 2,
+                (original.width + sw) / 2, (original.height + sh) / 2
+            )
+            // slides de carrossel saem sempre com 1080 de largura
+            val w = if (aspect != null) 1080 else sw
+            val h = if (aspect != null) (1080 / aspect).toInt() else sh
+            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawBitmap(original, from, Rect(0, 0, w, h), if (dark) darkPaint() else Paint(Paint.FILTER_BITMAP_FLAG))
             original.recycle()
-            draw(ctx, Canvas(bitmap), bitmap.width, bitmap.height, logo, phrase)
-            val png = ext == "png"
+            if (logo) drawLogo(ctx, canvas, w, h)
+            if (phrase.isNotBlank()) drawPhrase(canvas, w, h, phrase.trim())
+            val png = ext == "png" && aspect == null && !dark
             FileOutputStream(dst).use {
                 bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95, it)
             }
@@ -120,15 +157,43 @@ object Watermark {
         }
     }
 
-    /** Recodifica [src] em [dst] com a logo e/ou a frase. Bloqueante; [onProgress] recebe 0..100. */
-    fun video(ctx: Context, src: File, dst: File, logo: Boolean, phrase: String, onProgress: (Int) -> Unit) {
+    /** Camada da frase: invisível no começo e surgindo aos poucos. */
+    private class FadeOverlay(private val bitmap: Bitmap) : BitmapOverlay() {
+        override fun getBitmap(presentationTimeUs: Long): Bitmap = bitmap
+
+        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+            val t = ((presentationTimeUs / 1_000_000f - FADE_START) / FADE_LENGTH).coerceIn(0f, 1f)
+            val eased = t * t * (3f - 2f * t)
+            return OverlaySettings.Builder().setAlphaScale(eased).build()
+        }
+    }
+
+    /**
+     * Recodifica [src] em [dst] com a logo e/ou a frase. A frase surge com
+     * um efeito de opacidade nos primeiros segundos. Bloqueante; [onProgress]
+     * recebe 0..100.
+     */
+    fun video(
+        ctx: Context, src: File, dst: File, logo: Boolean, phrase: String,
+        dark: Boolean = false, onProgress: (Int) -> Unit
+    ) {
         val fail = "Não foi possível gravar a logo ou a frase neste vídeo. " +
             "Tente sem frase e com a marca d'água desativada."
         val (w, h) = dimensions(src) ?: throw WatermarkException(fail)
 
-        // Um quadro transparente do tamanho do vídeo, só com a logo e a frase no lugar.
-        val frame = try {
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { draw(ctx, Canvas(it), w, h, logo, phrase) }
+        // Quadros transparentes do tamanho do vídeo: um com a logo, outro com a frase.
+        val overlays = ArrayList<TextureOverlay>()
+        try {
+            if (logo) {
+                val frame = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                drawLogo(ctx, Canvas(frame), w, h)
+                overlays.add(BitmapOverlay.createStaticBitmapOverlay(frame))
+            }
+            if (phrase.isNotBlank()) {
+                val frame = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                drawPhrase(Canvas(frame), w, h, phrase.trim())
+                overlays.add(FadeOverlay(frame))
+            }
         } catch (e: Throwable) {
             throw WatermarkException(fail, e)
         }
@@ -154,9 +219,15 @@ object Watermark {
                         latch.countDown()
                     }
                 })
-                val overlays = ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(frame))
+                val effects = ArrayList<Effect>()
+                if (dark) {
+                    effects.add(Brightness(-0.10f))
+                    effects.add(Contrast(0.12f))
+                    effects.add(HslAdjustment.Builder().adjustSaturation(-30f).build())
+                }
+                if (overlays.isNotEmpty()) effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
                 val item = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(src)))
-                    .setEffects(Effects(emptyList(), listOf<Effect>(OverlayEffect(overlays))))
+                    .setEffects(Effects(emptyList(), effects))
                     .build()
                 t.start(item, dst.absolutePath)
 

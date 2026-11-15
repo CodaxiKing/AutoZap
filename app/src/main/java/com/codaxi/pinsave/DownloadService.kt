@@ -80,15 +80,11 @@ class DownloadService : Service() {
         worker.execute {
             try {
                 val report: (Progress) -> Unit = { p -> main.post { progress(job.key, p) } }
-                val uris = when {
-                    job.link != null -> Library.download(app, job.link, job.phrase, report)
-                    job.source != null -> listOf(Library.addPhrase(app, job.source, job.phrase.orEmpty(), report))
-                    else -> emptyList()
-                }
+                val uris = job.work(app, report)
                 main.post { done(job.key, uris) }
             } catch (e: Exception) {
                 val message = friendly(e)
-                main.post { failed(job.key, message, job.link ?: "") }
+                main.post { failed(job.key, message, job.shown) }
             }
         }
     }
@@ -181,7 +177,10 @@ class DownloadService : Service() {
 
         // Tudo abaixo só é tocado na thread principal.
         private val main = Handler(Looper.getMainLooper())
-        private class Job(val key: String, val link: String?, val source: Uri?, val phrase: String?)
+        /** [shown] identifica o trabalho para o usuário em caso de erro. */
+        private class Job(
+            val key: String, val shown: String, val work: (Context, (Progress) -> Unit) -> List<Uri>
+        )
 
         private val queue = ArrayDeque<Job>()
         private val listeners = HashMap<String, Listener>()
@@ -202,12 +201,21 @@ class DownloadService : Service() {
          */
         fun enqueue(ctx: Context, link: String, listener: Listener?, phrase: String? = null) {
             if (listener != null) listeners[link] = listener
-            add(ctx, Job(link, link, null, phrase))
+            add(ctx, Job(link, link) { c, report -> Library.download(c, link, phrase, report) })
         }
 
         /** Põe na fila a gravação de uma frase num arquivo já baixado. */
         fun enqueuePhrase(ctx: Context, uri: Uri, phrase: String) {
-            add(ctx, Job("frase:" + Keys.of(uri), null, uri, phrase))
+            add(ctx, Job("frase:" + Keys.of(uri), "") { c, report -> listOf(Library.addPhrase(c, uri, phrase, report)) })
+        }
+
+        /** Põe na fila a criação de um vídeo ou carrossel a partir do banco. */
+        fun enqueueGenerate(
+            ctx: Context, key: String, listener: Listener?, clips: List<Pair<String, String>>,
+            isVideo: Boolean, caption: String
+        ) {
+            if (listener != null) listeners[key] = listener
+            add(ctx, Job(key, "") { c, report -> Library.generate(c, clips, isVideo, caption, report) })
         }
 
         private fun add(ctx: Context, job: Job) {
@@ -229,9 +237,11 @@ class DownloadService : Service() {
 
         fun friendly(e: Exception): String = when (e) {
             is Watermark.WatermarkException -> e.message ?: "Não foi possível aplicar a marca d'água."
+            is TikTokExtractor.TikTokException -> e.message ?: "Não foi possível baixar do TikTok."
+            is Pexels.PexelsException -> e.message ?: "Não foi possível usar o banco de vídeos."
             is InstagramExtractor.InstagramException -> e.message ?: "Não foi possível baixar do Instagram."
             is PinterestExtractor.NoVideoException ->
-                "Não achei vídeo nem imagem nesse pin. Ele pode ser privado ou ter sido removido."
+                "Não achei vídeo nem imagem nesse link. Ele pode ser privado ou ter sido removido."
             is java.net.UnknownHostException, is java.net.SocketTimeoutException ->
                 "Sem conexão com a internet."
             else -> "Não foi possível baixar: ${e.message ?: e.javaClass.simpleName}"

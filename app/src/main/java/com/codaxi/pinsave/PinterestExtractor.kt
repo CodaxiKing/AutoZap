@@ -102,7 +102,7 @@ object PinterestExtractor {
         if (dir == "originals") Int.MAX_VALUE else dir.substringBefore('x').toIntOrNull() ?: 0
 
     /** Trecho "[ ... ]" que vem logo depois de uma chave JSON, ou null. */
-    private fun arrayAfter(text: String, key: String): String? {
+    internal fun arrayAfter(text: String, key: String): String? {
         var from = 0
         while (true) {
             val k = text.indexOf(key, from)
@@ -216,7 +216,11 @@ object PinterestExtractor {
     /** Um arquivo do pin, com os endereços possíveis do melhor para o pior. */
     class Media(val isVideo: Boolean, val urls: List<String>)
 
-    class Resolved(val pinId: String?, val media: List<Media>, val caption: String)
+    /** [headers] são cabeçalhos extras que o servidor exige para entregar os arquivos. */
+    class Resolved(
+        val pinId: String?, val media: List<Media>, val caption: String,
+        val headers: Map<String, String> = emptyMap()
+    )
 
     /** Faz as requisições necessárias. Bloqueante: chame fora da thread principal. */
     fun resolve(link: String): Resolved {

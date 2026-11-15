@@ -71,7 +71,7 @@ class PopupActivity : Activity() {
             }
             i.action == Intent.ACTION_SEND -> {
                 if (link == null) {
-                    toast("Isso não é um link do Pinterest nem do Instagram")
+                    toast("Isso não é um link do Pinterest, Instagram ou TikTok")
                     finish()
                 } else {
                     start(link)
@@ -110,7 +110,7 @@ class PopupActivity : Activity() {
             ++attempts < 5 -> main.postDelayed({ check() }, 400)
             else -> {
                 checking = false
-                toast("Nenhum link do Pinterest ou Instagram copiado")
+                toast("Nenhum link do Pinterest, Instagram ou TikTok copiado")
                 finish()
             }
         }
@@ -124,12 +124,12 @@ class PopupActivity : Activity() {
     private fun ask(link: String) {
         busy = true
         val builder = AlertDialog.Builder(this)
-            .setTitle(if (InstagramExtractor.isInstagram(link)) "Baixar do Instagram?" else "Baixar do Pinterest?")
+            .setTitle("Baixar do ${Links.source(link)}?")
         // Campo opcional para a frase que fica no meio do vídeo.
         val phraseBox = if (Watermark.asksPhrase(this)) {
             CaptionUi.box(
                 this, "", "Frase no meio do vídeo (opcional)",
-                "A frase fica gravada no vídeo, em branco, no centro.", templates = false
+                "A frase surge aos poucos no começo do vídeo, em branco, no centro.", templates = false
             )
         } else {
             null

@@ -147,13 +147,23 @@ object Links {
     fun findLinks(text: CharSequence?): List<String> {
         if (text.isNullOrBlank()) return emptyList()
         // mantém a ordem em que os links aparecem no texto
-        return (PinterestExtractor.findLinks(text) + InstagramExtractor.findLinks(text))
+        return (PinterestExtractor.findLinks(text) + InstagramExtractor.findLinks(text) + TikTokExtractor.findLinks(text))
             .distinct()
             .sortedBy { text.indexOf(it) }
     }
 
     fun findLink(text: CharSequence?): String? = findLinks(text).firstOrNull()
 
-    fun resolve(link: String): PinterestExtractor.Resolved =
-        if (InstagramExtractor.isInstagram(link)) InstagramExtractor.resolve(link) else PinterestExtractor.resolve(link)
+    /** Nome do site de origem, para mostrar ao usuário. */
+    fun source(link: String): String = when {
+        InstagramExtractor.isInstagram(link) -> "Instagram"
+        TikTokExtractor.isTikTok(link) -> "TikTok"
+        else -> "Pinterest"
+    }
+
+    fun resolve(link: String): PinterestExtractor.Resolved = when {
+        InstagramExtractor.isInstagram(link) -> InstagramExtractor.resolve(link)
+        TikTokExtractor.isTikTok(link) -> TikTokExtractor.resolve(link)
+        else -> PinterestExtractor.resolve(link)
+    }
 }

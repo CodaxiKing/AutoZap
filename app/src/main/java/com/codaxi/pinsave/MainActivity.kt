@@ -111,7 +111,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         })
         header.addView(TextView(this).apply {
-            text = "Baixe do Pinterest ou Instagram e poste no Instagram ou TikTok"
+            text = "Baixe ou crie conteúdo e poste no Instagram ou TikTok"
             setTextColor(textDim)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, dp(2), 0, dp(16))
@@ -119,7 +119,7 @@ class MainActivity : Activity() {
 
         // --- links + baixar ---
         input = EditText(this).apply {
-            hint = "Cole um ou vários links (Pinterest ou Instagram)"
+            hint = "Cole links do Pinterest, Instagram ou TikTok"
             setHintTextColor(textDim)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -136,7 +136,7 @@ class MainActivity : Activity() {
             pill("Colar", card) {
                 val link = Clip.readLink(this)
                 if (link == null) {
-                    toast("Nenhum link do Pinterest ou Instagram copiado")
+                    toast("Nenhum link do Pinterest, Instagram ou TikTok copiado")
                 } else {
                     val current = input.text.toString().trim()
                     if (!current.contains(link)) input.setText(if (current.isEmpty()) link else "$current\n$link")
@@ -146,6 +146,22 @@ class MainActivity : Activity() {
         )
         actions.addView(pill("Baixar", accent) { startDownload() }, LinearLayout.LayoutParams(0, WRAP, 2f))
         header.addView(actions, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        // --- criar conteúdo novo ---
+        val create = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        create.addView(
+            pill("Criar vídeo", Color.parseColor("#2F3138")) {
+                startActivity(Intent(this, GeneratorActivity::class.java))
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
+        )
+        create.addView(
+            pill("Criar carrossel", Color.parseColor("#2F3138")) {
+                startActivity(Intent(this, GeneratorActivity::class.java).putExtra(GeneratorActivity.EXTRA_CAROUSEL, true))
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f)
+        )
+        header.addView(create, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
         queueRow = TextView(this).apply {
             setTextColor(green)
@@ -291,7 +307,7 @@ class MainActivity : Activity() {
         shown = if (onlyUnposted) all.filter { Posted.get(this, it.uri).isEmpty() } else all
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         empty.text = if (all.isEmpty()) {
-            "Nada por aqui ainda.\n\nNo Pinterest ou no Instagram, toque em Compartilhar → Copiar link, " +
+            "Nada por aqui ainda.\n\nNo Pinterest, Instagram ou TikTok, toque em Compartilhar → Copiar link, " +
                 "ou escolha \"Baixar com PinSave\" na lista de apps."
         } else {
             "Tudo que você baixou já foi postado."
@@ -317,7 +333,7 @@ class MainActivity : Activity() {
     private fun startDownload() {
         val links = Links.findLinks(input.text)
         if (links.isEmpty()) {
-            toast("Cole um link do Pinterest ou de um post/Reel do Instagram")
+            toast("Cole um link do Pinterest, Instagram ou TikTok")
             return
         }
         getSharedPreferences("pinsave", Context.MODE_PRIVATE).edit().putString("last_clip", links.last()).apply()
