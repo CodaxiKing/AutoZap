@@ -58,8 +58,8 @@ Os botões "Criar vídeo" e "Criar carrossel" montam conteúdo novo. Você escol
 uma por linha — e o app sugere fundos do banco. "Trocar" busca outro fundo até você gostar.
 O resultado sai escurecido, com a frase no meio e a logo, e a legenda fica pronta para colar.
 
-Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). A chave é
-colada uma vez no app e fica guardada só no aparelho. Os vídeos do banco não têm música.
+Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). O app já vem
+com uma chave embutida (em `Pexels.kt`); "Trocar a chave do Pexels" no gerador usa outra. Os vídeos do banco não têm música.
 
 ### Frase no vídeo
 

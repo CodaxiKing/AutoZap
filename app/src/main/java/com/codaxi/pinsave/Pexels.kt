@@ -32,7 +32,10 @@ object Pexels {
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("pinsave", Context.MODE_PRIVATE)
 
-    fun key(ctx: Context): String = prefs(ctx).getString("pexels_key", "") ?: ""
+    /** Chave embutida a pedido do dono do app; "Trocar a chave" no gerador substitui por outra. */
+    private const val DEFAULT_KEY = "DOyhJmmsSVWC49YVZmKr34BoTCohLCUm3VgPIOiPUQFtW1jA4z1uFb0X"
+
+    fun key(ctx: Context): String = prefs(ctx).getString("pexels_key", "").orEmpty().ifBlank { DEFAULT_KEY }
 
     fun setKey(ctx: Context, key: String) = prefs(ctx).edit().putString("pexels_key", key.trim()).apply()
 
