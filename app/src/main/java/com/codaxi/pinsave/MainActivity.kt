@@ -3,6 +3,7 @@ package com.codaxi.pinsave
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -51,6 +52,7 @@ class MainActivity : Activity() {
     private lateinit var bubbleRow: TextView
     private lateinit var watermarkRow: TextView
     private lateinit var phraseRow: TextView
+    private lateinit var reminderRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -162,6 +164,12 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, WRAP, 1f)
         )
         header.addView(create, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+        header.addView(
+            pill("Criar vários vídeos de uma vez", Color.parseColor("#2F3138")) {
+                startActivity(Intent(this, GeneratorActivity::class.java).putExtra(GeneratorActivity.EXTRA_BATCH, true))
+            },
+            LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+        )
 
         queueRow = TextView(this).apply {
             setTextColor(green)
@@ -189,6 +197,9 @@ class MainActivity : Activity() {
             updateRows()
         }
         header.addView(phraseRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        reminderRow = settingRow { manageReminders() }
+        header.addView(reminderRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
         tagsRow = settingRow {
             editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this)) {
@@ -249,6 +260,7 @@ class MainActivity : Activity() {
         super.onResume()
         if (Shortcut.isOn(this)) Shortcut.show(this)
         BubbleService.start(this)
+        Reminders.schedule(this)
         updateRows()
         refresh()
         showQueue(DownloadService.currentStatus)
@@ -288,6 +300,11 @@ class MainActivity : Activity() {
         phraseRow.text = if (asks) "✓  Pedir a frase do vídeo antes de baixar: ativado"
         else "❝  Pedir a frase do vídeo antes de baixar"
         phraseRow.setTextColor(if (asks) green else Color.WHITE)
+
+        val times = Reminders.times(this)
+        reminderRow.text = if (times.isEmpty()) "⏰  Criar lembretes de postagem"
+        else "⏰  Lembretes de postagem: ${times.joinToString(", ")}"
+        reminderRow.setTextColor(if (times.isEmpty()) Color.WHITE else green)
 
         val tags = Captions.hashtags(this)
         tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"
@@ -360,6 +377,33 @@ class MainActivity : Activity() {
             toast("Pronto: copie o link, puxe a barra de notificações e toque em \"Copiou um link?\"")
         }
         updateRows()
+    }
+
+    /** Lista os horários de lembrete: tocar em um apaga, e o último item adiciona. */
+    private fun manageReminders() {
+        val times = Reminders.times(this)
+        val labels = times.map { "$it  —  tocar para remover" } + "+ Adicionar horário"
+        AlertDialog.Builder(this)
+            .setTitle("Lembretes de postagem")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which < times.size) {
+                    Reminders.remove(this, times[which])
+                    updateRows()
+                } else {
+                    TimePickerDialog(this, { _, hour, minute ->
+                        Reminders.add(this, hour, minute)
+                        updateRows()
+                        // sem a permissão de notificações o lembrete não aparece
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
+                        }
+                    }, 18, 0, true).show()
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     /** Bolinha sobre os outros apps: copiou o link, toca nela e o download começa. */

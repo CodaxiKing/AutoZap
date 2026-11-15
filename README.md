@@ -61,6 +61,19 @@ O resultado sai escurecido, com a frase no meio e a logo, e a legenda fica pront
 Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). O app já vem
 com uma chave embutida (em `Pexels.kt`); "Trocar a chave do Pexels" no gerador usa outra. Os vídeos do banco não têm música.
 
+### Criar vários vídeos de uma vez
+
+"Criar vários vídeos de uma vez" recebe até 20 frases, uma por linha, e gera um vídeo para
+cada uma, com fundos diferentes do mesmo tema. Cada fundo pode ser trocado antes de gerar.
+Os vídeos entram na fila e aparecem na lista conforme ficam prontos; a legenda de cada um
+é a própria frase, mais o texto extra que você escrever.
+
+### Lembretes de postagem
+
+Em "Lembretes de postagem" você define horários diários. Na hora, o app avisa e abre o item
+mais antigo que ainda não foi postado, já na tela de legenda e postagem. O Android pode
+atrasar o aviso em alguns minutos para poupar bateria, e é preciso permitir as notificações.
+
 ### Frase no vídeo
 
 Com "Pedir a frase do vídeo antes de baixar" ativado, o pop-up traz um campo para a frase.

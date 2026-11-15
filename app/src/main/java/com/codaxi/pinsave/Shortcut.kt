@@ -64,6 +64,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (Shortcut.isOn(context)) Shortcut.show(context)
         BubbleService.start(context)
+        Reminders.schedule(context)
     }
 }
 

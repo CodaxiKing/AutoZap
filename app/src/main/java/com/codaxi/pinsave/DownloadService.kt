@@ -135,9 +135,9 @@ class DownloadService : Service() {
     private fun notifyDone(uris: List<Uri>) {
         val images = uris.all { Keys.isImage(it) }
         val title = when {
-            uris.size > 1 -> "${uris.size} arquivos baixados"
-            images -> "Imagem baixada"
-            else -> "Vídeo baixado"
+            uris.size > 1 -> "${uris.size} arquivos prontos"
+            images -> "Imagem pronta"
+            else -> "Vídeo pronto"
         }
         val open = Intent(this, PopupActivity::class.java)
             .setAction(PopupActivity.ACTION_DONE)

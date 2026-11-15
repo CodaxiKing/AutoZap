@@ -213,7 +213,7 @@ class PopupActivity : Activity() {
             "A legenda é copiada ao postar: é só colar no Instagram ou TikTok." +
                 if (tags.isNotBlank()) "\nHashtags fixas no final: $tags" else ""
         )
-        val title = when {
+        val title = intent.getStringExtra(EXTRA_TITLE) ?: when {
             uris.size > 1 -> "${uris.size} arquivos salvos ✓"
             Keys.isImage(uris[0]) -> "Imagem salva ✓"
             else -> "Vídeo salvo ✓"
@@ -286,5 +286,6 @@ class PopupActivity : Activity() {
         const val EXTRA_ASK = "ask"
         const val EXTRA_DIRECT = "direct"
         const val EXTRA_URIS = "uris"
+        const val EXTRA_TITLE = "title"
     }
 }

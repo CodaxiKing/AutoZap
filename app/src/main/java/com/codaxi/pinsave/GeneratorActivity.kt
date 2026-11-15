@@ -41,6 +41,8 @@ class GeneratorActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newFixedThreadPool(3)
     private var carousel = false
+    private var batch = false                    // vários vídeos, um por frase
+    private val multi get() = carousel || batch
     private var theme = -1                       // -1 = aleatório
     private var query = ""
     private var page = 1
@@ -110,13 +112,14 @@ class GeneratorActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         carousel = intent.getBooleanExtra(EXTRA_CAROUSEL, false)
+        batch = !carousel && intent.getBooleanExtra(EXTRA_BATCH, false)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(20), dp(16), dp(24))
         }
         root.addView(TextView(this).apply {
-            text = if (carousel) "Criar carrossel" else "Criar vídeo"
+            text = if (carousel) "Criar carrossel" else if (batch) "Criar vários vídeos" else "Criar vídeo"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
             typeface = Typeface.DEFAULT_BOLD
@@ -169,14 +172,22 @@ class GeneratorActivity : Activity() {
         searchField = field("ou busque outro tema (em inglês acha mais)", 1)
         form.addView(searchField, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
 
-        form.addView(label(if (carousel) "Frases — uma por linha, cada linha vira um slide" else "Frase do vídeo"))
+        form.addView(
+            label(
+                when {
+                    carousel -> "Frases — uma por linha, cada linha vira um slide"
+                    batch -> "Frases — uma por linha, cada linha vira um vídeo (até 20)"
+                    else -> "Frase do vídeo"
+                }
+            )
+        )
         phraseField = field(
-            if (carousel) "Primeira frase\nSegunda frase\nTerceira frase" else "Escreva a frase que aparece no meio",
-            if (carousel) 4 else 2
+            if (multi) "Primeira frase\nSegunda frase\nTerceira frase" else "Escreva a frase que aparece no meio",
+            if (multi) 4 else 2
         )
         form.addView(phraseField, LinearLayout.LayoutParams(MATCH, WRAP))
         form.addView(
-            pill(if (carousel) "Buscar fundos" else "Buscar fundo", accent) { findBackgrounds() },
+            pill(if (multi) "Buscar fundos" else "Buscar fundo", accent) { findBackgrounds() },
             LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(12) }
         )
 
@@ -188,14 +199,19 @@ class GeneratorActivity : Activity() {
         resultBox.addView(label("Prévia — toque em Trocar até gostar do fundo", 22))
         slidesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         resultBox.addView(slidesBox)
-        resultBox.addView(label("Legenda da publicação"))
+        resultBox.addView(
+            label(
+                if (batch) "Texto extra da legenda (opcional) — a frase de cada vídeo já entra na legenda dele"
+                else "Legenda da publicação"
+            )
+        )
         caption = CaptionUi.box(this, "", "Legenda e hashtags")
         caption.view.setPadding(0, 0, 0, 0)
         caption.field.setTextColor(Color.WHITE)
         caption.field.setHintTextColor(textDim)
         resultBox.addView(caption.view)
         resultBox.addView(
-            pill(if (carousel) "Gerar carrossel" else "Gerar vídeo", accent) { make() },
+            pill(if (carousel) "Gerar carrossel" else if (batch) "Gerar todos os vídeos" else "Gerar vídeo", accent) { make() },
             LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(16) }
         )
         form.addView(resultBox)
@@ -236,14 +252,14 @@ class GeneratorActivity : Activity() {
     private fun phrases(): List<String> {
         val text = phraseField.text.toString().trim()
         if (text.isEmpty()) return emptyList()
-        return if (carousel) text.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(10) else listOf(text)
+        return if (multi) text.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(if (batch) 20 else 10) else listOf(text)
     }
 
     /** Busca fundos no tema escolhido e monta a prévia, um fundo por frase. */
     private fun findBackgrounds() {
         val list = phrases()
         if (list.isEmpty()) {
-            toast(if (carousel) "Escreva pelo menos uma frase" else "Escreva a frase do vídeo")
+            toast(if (multi) "Escreva pelo menos uma frase" else "Escreva a frase do vídeo")
             return
         }
         val custom = searchField.text.toString().trim()
@@ -262,7 +278,7 @@ class GeneratorActivity : Activity() {
             }
             slides.clear()
             list.forEach { slides.add(Slide(it, pool.removeAt(0))) }
-            if (caption.field.text.isBlank()) caption.field.setText(list[0])
+            if (!batch && caption.field.text.isBlank()) caption.field.setText(list[0])
             resultBox.visibility = View.VISIBLE
             renderSlides()
         }
@@ -290,7 +306,7 @@ class GeneratorActivity : Activity() {
 
     private fun renderSlides() {
         slidesBox.removeAllViews()
-        val w = if (carousel) dp(176) else dp(216)
+        val w = if (carousel) dp(176) else if (batch) dp(132) else dp(216)
         val h = if (carousel) w * 5 / 4 else w * 16 / 9
         slides.forEach { slide ->
             val image = ImageView(this).apply {
@@ -379,6 +395,20 @@ class GeneratorActivity : Activity() {
     /** Manda para a fila e acompanha; ao terminar abre a tela de postar. */
     private fun make() {
         if (slides.isEmpty()) return
+        if (batch) {
+            // Cada vídeo é um trabalho separado na fila: fica pronto e avisa sozinho.
+            val extra = caption.field.text.toString().trim()
+            val stamp = System.currentTimeMillis()
+            slides.forEachIndexed { i, slide ->
+                val text = if (extra.isEmpty()) slide.phrase else slide.phrase + "\n\n" + extra
+                DownloadService.enqueueGenerate(
+                    this, "criar:$stamp:$i", null, listOf(slide.clip.url to slide.phrase), true, text
+                )
+            }
+            toast("${slides.size} vídeos na fila. Eles aparecem na lista conforme ficam prontos.")
+            finish()
+            return
+        }
         val pad = dp(24)
         val status = TextView(this).apply { text = "Na fila…" }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -454,6 +484,7 @@ class GeneratorActivity : Activity() {
 
     companion object {
         const val EXTRA_CAROUSEL = "carousel"
+        const val EXTRA_BATCH = "batch"
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     }

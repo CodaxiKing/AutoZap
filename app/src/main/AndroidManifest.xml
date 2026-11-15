@@ -88,6 +88,10 @@
         </service>
 
         <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".BootReceiver"
             android:exported="false">
             <intent-filter>
