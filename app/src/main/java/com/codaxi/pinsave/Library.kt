@@ -63,7 +63,7 @@ object Library {
      * recortadas no formato de carrossel.
      */
     fun generate(
-        ctx: Context, clips: List<Pair<String, String>>, isVideo: Boolean, caption: String,
+        ctx: Context, clips: List<Pair<String, String>>, isVideo: Boolean, caption: String, tags: String,
         onProgress: (Progress) -> Unit
     ): List<Uri> {
         val out = ArrayList<Uri>()
@@ -71,14 +71,19 @@ object Library {
             val uri = save(ctx, url, "criado", isVideo, index, phrase, emptyMap(), dark = true, carousel = !isVideo) {
                     pct, watermark -> onProgress(Progress(index, clips.size, pct, watermark))
             }
-            Captions.set(ctx, uri, caption)
             out.add(uri)
         }
+        // A legenda termina sempre com as hashtags do tema.
+        val withTags = { text: String -> listOf(text.trim(), tags.trim()).filter { it.isNotEmpty() }.joinToString("\n\n") }
+        val typed = caption.trim()
+        out.forEach { Captions.set(ctx, it, withTags(typed)) }
         // Se a legenda é só a frase (com ou sem texto extra), a IA escreve uma de verdade.
         val first = clips.firstOrNull()?.second.orEmpty().trim()
-        val typed = caption.trim()
         if (typed.isEmpty() || typed.startsWith(first)) {
-            AiCaptions.auto(ctx, out, clips.joinToString(" / ") { it.second }, "", typed.removePrefix(first))
+            AiCaptions.auto(
+                ctx, out, clips.joinToString(" / ") { it.second }, "",
+                suffix = withTags(typed.removePrefix(first)), noHashtags = tags.isNotBlank()
+            )
         }
         return out
     }

@@ -38,7 +38,7 @@ object AiCaptions {
      * Legenda nova a partir da frase do vídeo e/ou de um texto de referência
      * (a legenda original ou um rascunho). Bloqueante.
      */
-    fun generate(key: String, phrase: String, reference: String): String {
+    fun generate(key: String, phrase: String, reference: String, noHashtags: Boolean = false): String {
         val user = StringBuilder()
         if (phrase.isNotBlank()) user.append("Frase que aparece no vídeo: ").append(phrase.trim()).append('\n')
         if (reference.isNotBlank()) {
@@ -46,6 +46,8 @@ object AiCaptions {
                 .append(reference.trim().take(800)).append('\n')
         }
         if (user.isEmpty()) user.append("O vídeo não tem frase. Escreva uma legenda no tema da página.\n")
+        // quando o tema já tem hashtags próprias, elas entram depois da legenda
+        if (noHashtags) user.append("Não escreva nenhuma hashtag; elas serão acrescentadas depois.\n")
         user.append("Escreva a legenda.")
 
         var last = AiException("Não foi possível gerar a legenda.")
@@ -113,11 +115,14 @@ object AiCaptions {
      * escrita pela IA. Se a chave não existe ou a chamada falha, a legenda
      * que já estava fica como está.
      */
-    fun auto(ctx: Context, uris: List<Uri>, phrase: String, reference: String, suffix: String = "") {
+    fun auto(
+        ctx: Context, uris: List<Uri>, phrase: String, reference: String,
+        suffix: String = "", noHashtags: Boolean = false
+    ) {
         val key = key(ctx)
         if (key.isBlank() || uris.isEmpty()) return
         val caption = try {
-            generate(key, phrase, reference)
+            generate(key, phrase, reference, noHashtags)
         } catch (e: Exception) {
             return
         }

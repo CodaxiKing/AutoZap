@@ -17,18 +17,32 @@ object Pexels {
 
     class PexelsException(message: String) : IOException(message)
 
-    /** Temas do nicho, com a busca em inglês que traz os melhores resultados. */
+    /** Tema do nicho: a busca em inglês traz os melhores fundos; [tags] são as hashtags padrão. */
+    class Theme(val name: String, val query: String, val tags: String)
+
     val THEMES = listOf(
-        "Carros de luxo" to "luxury sports car night",
-        "Dinheiro" to "money cash dollars",
-        "Relógios e joias" to "luxury watch dark",
-        "Cidade à noite" to "city night skyline dark",
-        "Terno e estilo" to "man in suit dark",
-        "Mansões" to "luxury mansion night",
-        "Jatos e iates" to "private jet yacht luxury",
-        "Cassino" to "casino poker chips",
-        "Whisky e charuto" to "whiskey cigar dark"
+        Theme("Máfia", "gangster suit dark", "#mafia #mafiaaesthetic #poder #respeito #mentalidade #luxury #darkaesthetic"),
+        Theme("Carros de luxo", "luxury sports car night", "#carros #supercarros #luxurycars #carlifestyle #luxury #motivação #sucesso"),
+        Theme("Dinheiro", "money cash dollars", "#dinheiro #riqueza #money #mentalidademilionária #sucesso #motivação #wealth"),
+        Theme("Relógios e joias", "luxury watch dark", "#relógios #luxurywatch #luxo #estilo #success #riqueza #lifestyle"),
+        Theme("Cidade à noite", "city night skyline dark", "#cidade #nightlife #darkaesthetic #mentalidade #foco #motivação #luxury"),
+        Theme("Terno e estilo", "man in suit dark", "#elegância #estilomasculino #gentleman #disciplina #mentalidade #sucesso #luxury"),
+        Theme("Mansões", "luxury mansion night", "#mansão #luxuryhomes #riqueza #vidadeluxo #sucesso #motivação #lifestyle"),
+        Theme("Jatos e iates", "private jet yacht luxury", "#jatinho #iate #privatejet #vidadeluxo #riqueza #success #luxurylifestyle"),
+        Theme("Cassino", "casino poker chips", "#cassino #poker #risco #mentalidade #dinheiro #luxury #darkaesthetic"),
+        Theme("Whisky e charuto", "whiskey cigar dark", "#whisky #charuto #gentleman #estilo #luxo #mentalidade #darkaesthetic")
     )
+
+    /** Hashtags usadas quando a busca é livre, sem um tema da lista. */
+    const val GENERAL_TAGS = "#luxury #motivação #mentalidade #sucesso #lifestyle #darkaesthetic #riqueza"
+
+    /** Hashtags do tema: as que o usuário editou, ou as padrão. */
+    fun tags(ctx: Context, theme: Theme?): String =
+        if (theme == null) prefs(ctx).getString("tags_", null) ?: GENERAL_TAGS
+        else prefs(ctx).getString("tags_" + theme.name, null) ?: theme.tags
+
+    fun setTags(ctx: Context, theme: Theme?, tags: String) =
+        prefs(ctx).edit().putString("tags_" + (theme?.name ?: ""), tags.trim()).apply()
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("pinsave", Context.MODE_PRIVATE)
 

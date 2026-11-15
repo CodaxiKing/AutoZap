@@ -212,10 +212,10 @@ class DownloadService : Service() {
         /** Põe na fila a criação de um vídeo ou carrossel a partir do banco. */
         fun enqueueGenerate(
             ctx: Context, key: String, listener: Listener?, clips: List<Pair<String, String>>,
-            isVideo: Boolean, caption: String
+            isVideo: Boolean, caption: String, tags: String
         ) {
             if (listener != null) listeners[key] = listener
-            add(ctx, Job(key, "") { c, report -> Library.generate(c, clips, isVideo, caption, report) })
+            add(ctx, Job(key, "") { c, report -> Library.generate(c, clips, isVideo, caption, tags, report) })
         }
 
         private fun add(ctx: Context, job: Job) {

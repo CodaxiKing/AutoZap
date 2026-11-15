@@ -45,6 +45,8 @@ class GeneratorActivity : Activity() {
     private val multi get() = carousel || batch
     private var theme = -1                       // -1 = aleatório
     private var query = ""
+    private var activeTheme: Pexels.Theme? = null   // tema da última busca (null = busca livre)
+    private var tags = ""                           // hashtags que entram no fim da legenda
     private var page = 1
     private val pool = ArrayList<Pexels.Clip>()  // fundos já buscados e ainda não usados
     private val slides = ArrayList<Slide>()
@@ -60,6 +62,7 @@ class GeneratorActivity : Activity() {
     private lateinit var slidesBox: LinearLayout
     private lateinit var resultBox: LinearLayout
     private lateinit var caption: CaptionUi.Box
+    private lateinit var tagsView: TextView
 
     private val bg = Color.parseColor("#121316")
     private val card = Color.parseColor("#1D1F24")
@@ -186,6 +189,22 @@ class GeneratorActivity : Activity() {
             if (multi) 4 else 2
         )
         form.addView(phraseField, LinearLayout.LayoutParams(MATCH, WRAP))
+        form.addView(TextView(this).apply {
+            text = "Usar frases do banco ▾"
+            setTextColor(accent)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(0, dp(10), 0, dp(2))
+            setOnClickListener {
+                if (multi) {
+                    PhraseBank.pickMany(this@GeneratorActivity, if (batch) 10 else 5) { picked ->
+                        val current = phraseField.text.toString().trim()
+                        phraseField.setText((listOf(current) + picked).filter { it.isNotEmpty() }.joinToString("\n"))
+                    }
+                } else {
+                    PhraseBank.pickOne(this@GeneratorActivity) { phraseField.setText(it) }
+                }
+            }
+        })
         form.addView(
             pill(if (multi) "Buscar fundos" else "Buscar fundo", accent) { findBackgrounds() },
             LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(12) }
@@ -210,6 +229,14 @@ class GeneratorActivity : Activity() {
         caption.field.setTextColor(Color.WHITE)
         caption.field.setHintTextColor(textDim)
         resultBox.addView(caption.view)
+        tagsView = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            background = rounded(card)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setOnClickListener { editTags() }
+        }
+        resultBox.addView(tagsView, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
         resultBox.addView(
             pill(if (carousel) "Gerar carrossel" else if (batch) "Gerar todos os vídeos" else "Gerar vídeo", accent) { make() },
             LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(16) }
@@ -239,7 +266,7 @@ class GeneratorActivity : Activity() {
     }
 
     private fun chooseTheme() {
-        val names = listOf("Aleatório") + Pexels.THEMES.map { it.first }
+        val names = listOf("Aleatório") + Pexels.THEMES.map { it.name }
         AlertDialog.Builder(this)
             .setTitle("Tema do fundo")
             .setItems(names.toTypedArray()) { _, which ->
@@ -263,11 +290,13 @@ class GeneratorActivity : Activity() {
             return
         }
         val custom = searchField.text.toString().trim()
-        query = when {
-            custom.isNotEmpty() -> "$custom dark"
-            theme >= 0 -> Pexels.THEMES[theme].second
-            else -> Pexels.THEMES.random().second
+        activeTheme = when {
+            custom.isNotEmpty() -> null
+            theme >= 0 -> Pexels.THEMES[theme]
+            else -> Pexels.THEMES.random()
         }
+        query = activeTheme?.query ?: "$custom dark"
+        tags = Pexels.tags(this, activeTheme)
         page = 1
         pool.clear()
         toast("Buscando fundos…")
@@ -280,8 +309,29 @@ class GeneratorActivity : Activity() {
             list.forEach { slides.add(Slide(it, pool.removeAt(0))) }
             if (!batch && caption.field.text.isBlank()) caption.field.setText(list[0])
             resultBox.visibility = View.VISIBLE
+            showTags()
             renderSlides()
         }
+    }
+
+    private fun showTags() {
+        val name = activeTheme?.name ?: "busca livre"
+        tagsView.text = "Hashtags do tema ($name) — toque para editar:\n" + tags.ifBlank { "(nenhuma)" }
+    }
+
+    /** Edita as hashtags do tema atual; a mudança vale para as próximas vezes também. */
+    private fun editTags() {
+        val box = CaptionUi.box(this, tags, "#hashtag1 #hashtag2", null, false)
+        AlertDialog.Builder(this)
+            .setTitle("Hashtags: " + (activeTheme?.name ?: "busca livre"))
+            .setView(box.view)
+            .setPositiveButton("Salvar") { _, _ ->
+                tags = box.field.text.toString().trim()
+                Pexels.setTags(this, activeTheme, tags)
+                showTags()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     /** Carrega mais uma página de fundos e chama [then] na thread principal. */
@@ -395,6 +445,7 @@ class GeneratorActivity : Activity() {
     /** Manda para a fila e acompanha; ao terminar abre a tela de postar. */
     private fun make() {
         if (slides.isEmpty()) return
+        PhraseBank.markUsed(this, slides.map { it.phrase })
         if (batch) {
             // Cada vídeo é um trabalho separado na fila: fica pronto e avisa sozinho.
             val extra = caption.field.text.toString().trim()
@@ -402,7 +453,7 @@ class GeneratorActivity : Activity() {
             slides.forEachIndexed { i, slide ->
                 val text = if (extra.isEmpty()) slide.phrase else slide.phrase + "\n\n" + extra
                 DownloadService.enqueueGenerate(
-                    this, "criar:$stamp:$i", null, listOf(slide.clip.url to slide.phrase), true, text
+                    this, "criar:$stamp:$i", null, listOf(slide.clip.url to slide.phrase), true, text, tags
                 )
             }
             toast("${slides.size} vídeos na fila. Eles aparecem na lista conforme ficam prontos.")
@@ -463,7 +514,7 @@ class GeneratorActivity : Activity() {
             .show()
         DownloadService.enqueueGenerate(
             this, "criar:" + System.currentTimeMillis(), l,
-            slides.map { it.clip.url to it.phrase }, !carousel, caption.field.text.toString()
+            slides.map { it.clip.url to it.phrase }, !carousel, caption.field.text.toString(), tags
         )
     }
 

@@ -72,6 +72,18 @@ O resultado sai escurecido, com a frase no meio e a logo, e a legenda fica pront
 Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). O app já vem
 com uma chave embutida (em `Pexels.kt`); "Trocar a chave do Pexels" no gerador usa outra. Os vídeos do banco não têm música.
 
+### Banco de frases
+
+Em "Banco de frases" você guarda suas frases (cole várias de uma vez, uma por linha). No
+gerador, "Usar frases do banco" deixa escolher ou sortear as que ainda não foram usadas; no
+pop-up de download, "Escolher do banco de frases" preenche a frase. As usadas ganham um ✓.
+
+### Hashtags por tema
+
+Cada tema do gerador (máfia, carros de luxo, dinheiro etc.) tem um conjunto de hashtags que
+entra sozinho no fim da legenda. Dá para editar o conjunto de cada tema na tela de criação;
+a mudança fica guardada. As hashtags fixas continuam entrando depois, em tudo.
+
 ### Criar vários vídeos de uma vez
 
 "Criar vários vídeos de uma vez" recebe até 20 frases, uma por linha, e gera um vídeo para

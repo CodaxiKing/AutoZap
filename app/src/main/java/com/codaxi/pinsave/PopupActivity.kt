@@ -134,12 +134,25 @@ class PopupActivity : Activity() {
         } else {
             null
         }
+        if (phraseBox != null && PhraseBank.list(this).isNotEmpty()) {
+            (phraseBox.view as? LinearLayout)?.addView(
+                TextView(this).apply {
+                    text = "Escolher do banco de frases ▾"
+                    textSize = 14f
+                    setTextColor(android.graphics.Color.parseColor("#FF5A5F"))
+                    setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
+                    setOnClickListener { PhraseBank.pickOne(this@PopupActivity) { phraseBox.field.setText(it) } }
+                },
+                0
+            )
+        }
         if (phraseBox != null) builder.setView(phraseBox.view) else builder.setMessage(link)
         val phrase = { phraseBox?.field?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
         show(
             builder
                 .setPositiveButton("Baixar") { _, _ -> download(link, phrase()) }
                 .setNeutralButton("Em 2º plano") { _, _ ->
+                    phrase()?.let { PhraseBank.markUsed(this, listOf(it)) }
                     DownloadService.enqueue(this, link, null, phrase())
                     toast("Na fila — aviso por notificação quando terminar")
                     finish()
@@ -152,6 +165,7 @@ class PopupActivity : Activity() {
 
     private fun download(link: String, phrase: String?) {
         busy = true
+        if (phrase != null) PhraseBank.markUsed(this, listOf(phrase))
         val pad = (24 * resources.displayMetrics.density).toInt()
         val status = TextView(this).apply { text = "Na fila…" }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {

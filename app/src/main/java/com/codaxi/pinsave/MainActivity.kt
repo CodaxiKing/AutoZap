@@ -54,6 +54,7 @@ class MainActivity : Activity() {
     private lateinit var phraseRow: TextView
     private lateinit var reminderRow: TextView
     private lateinit var aiRow: TextView
+    private lateinit var bankRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -199,6 +200,9 @@ class MainActivity : Activity() {
         }
         header.addView(phraseRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
+        bankRow = settingRow { manageBank() }
+        header.addView(bankRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         aiRow = settingRow {
             editText(
                 "Legendas com IA",
@@ -329,6 +333,10 @@ class MainActivity : Activity() {
         else "❝  Pedir a frase do vídeo antes de baixar"
         phraseRow.setTextColor(if (asks) green else Color.WHITE)
 
+        val bank = PhraseBank.list(this)
+        bankRow.text = if (bank.isEmpty()) "❝  Criar banco de frases"
+        else "❝  Banco de frases: ${bank.size} (${bank.count { !it.used }} ainda não usadas)"
+
         val ai = AiCaptions.isOn(this)
         aiRow.text = if (ai) "✓  Legendas com IA: ativadas (chave …${AiCaptions.key(this).takeLast(4)})"
         else "✨  Ativar legendas com IA (chave da OpenAI)"
@@ -410,6 +418,43 @@ class MainActivity : Activity() {
             toast("Pronto: copie o link, puxe a barra de notificações e toque em \"Copiou um link?\"")
         }
         updateRows()
+    }
+
+    /** Banco de frases: adicionar várias de uma vez, remover e zerar as marcas de "usada". */
+    private fun manageBank() {
+        val entries = PhraseBank.list(this)
+        val labels = listOf("+ Adicionar frases") +
+            (if (entries.any { it.used }) listOf("↺ Marcar todas como não usadas") else emptyList()) +
+            entries.map { PhraseBank.label(it) }
+        val fixed = labels.size - entries.size
+        AlertDialog.Builder(this)
+            .setTitle("Banco de frases (✓ = já usada)")
+            .setItems(labels.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> editText("Adicionar frases", "Uma frase por linha", "") {
+                        val added = PhraseBank.add(this, it)
+                        toast(if (added == 1) "1 frase adicionada" else "$added frases adicionadas")
+                        updateRows()
+                    }
+                    which < fixed -> {
+                        PhraseBank.resetUsed(this)
+                        updateRows()
+                    }
+                    else -> {
+                        val entry = entries[which - fixed]
+                        AlertDialog.Builder(this)
+                            .setMessage(entry.text)
+                            .setPositiveButton("Remover") { _, _ ->
+                                PhraseBank.remove(this, entry.text)
+                                updateRows()
+                            }
+                            .setNegativeButton("Fechar", null)
+                            .show()
+                    }
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     /** Lista os horários de lembrete: tocar em um apaga, e o último item adiciona. */
