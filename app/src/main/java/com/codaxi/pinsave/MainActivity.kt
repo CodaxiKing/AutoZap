@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private lateinit var shortcutRow: TextView
     private lateinit var bubbleRow: TextView
     private lateinit var watermarkRow: TextView
+    private lateinit var phraseRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -167,6 +168,12 @@ class MainActivity : Activity() {
         }
         header.addView(watermarkRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
+        phraseRow = settingRow {
+            Watermark.setAsksPhrase(this, !Watermark.asksPhrase(this))
+            updateRows()
+        }
+        header.addView(phraseRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
         tagsRow = settingRow {
             editText("Hashtags fixas", "Entram no fim de toda legenda. Ex.: #fyp #viral", Captions.hashtags(this)) {
                 Captions.setHashtags(this, it)
@@ -260,6 +267,11 @@ class MainActivity : Activity() {
         watermarkRow.text = if (mark) "✓  Marca d'água com a logo: ativada (toque para desativar)"
         else "◇  Ativar marca d'água com a logo nos próximos downloads"
         watermarkRow.setTextColor(if (mark) green else Color.WHITE)
+
+        val asks = Watermark.asksPhrase(this)
+        phraseRow.text = if (asks) "✓  Pedir a frase do vídeo antes de baixar: ativado"
+        else "❝  Pedir a frase do vídeo antes de baixar"
+        phraseRow.setTextColor(if (asks) green else Color.WHITE)
 
         val tags = Captions.hashtags(this)
         tagsRow.text = if (tags.isBlank()) "＃  Definir hashtags fixas para as legendas" else "＃  $tags"
@@ -473,6 +485,7 @@ class MainActivity : Activity() {
         PopupMenu(this, anchor).apply {
             menu.add(0, 1, 0, if (item.isImage) "Ver imagem" else "Assistir")
             menu.add(0, 2, 1, "Editar legenda")
+            menu.add(0, 6, 1, if (item.isImage) "Adicionar frase na imagem" else "Adicionar frase no vídeo")
             if (posted) menu.add(0, 3, 2, "Desmarcar como postado")
             menu.add(0, 4, 3, "Compartilhar em outro app")
             menu.add(0, 5, 4, "Excluir")
@@ -480,6 +493,14 @@ class MainActivity : Activity() {
                 when (it.itemId) {
                     1 -> open(item)
                     2 -> editCaption(item)
+                    6 -> editText("Frase", "Frase que aparece no meio, em branco", "") { text ->
+                        if (text.isBlank()) {
+                            toast("Escreva a frase")
+                        } else {
+                            DownloadService.enqueuePhrase(this@MainActivity, item.uri, text.trim())
+                            toast("Gravando a frase. O item é atualizado quando terminar.")
+                        }
+                    }
                     3 -> {
                         Posted.clear(this@MainActivity, item.uri)
                         applyFilter()

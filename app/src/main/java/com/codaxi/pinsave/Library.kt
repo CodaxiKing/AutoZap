@@ -27,7 +27,7 @@ object Library {
      * Bloqueante. Devolve um arquivo para pins comuns e vários para carrosséis.
      * [Progress.pct] vai de 0 a 100, ou -1 quando o tamanho é desconhecido.
      */
-    fun download(ctx: Context, link: String, onProgress: (Progress) -> Unit): List<Uri> {
+    fun download(ctx: Context, link: String, phrase: String?, onProgress: (Progress) -> Unit): List<Uri> {
         onProgress(Progress(0, 1, -1))
         val resolved = Links.resolve(link)
         val count = resolved.media.size
@@ -37,7 +37,7 @@ object Library {
         resolved.media.forEachIndexed { index, media ->
             for (url in media.urls) {
                 try {
-                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index) { pct, watermark ->
+                    val uri = save(ctx, url, resolved.pinId, media.isVideo, index, phrase) { pct, watermark ->
                         onProgress(Progress(index, count, pct, watermark))
                     }
                     Captions.set(ctx, uri, resolved.caption)
@@ -56,7 +56,7 @@ object Library {
     }
 
     private fun save(
-        ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int,
+        ctx: Context, url: String, pinId: String?, isVideo: Boolean, index: Int, phrase: String?,
         onProgress: (pct: Int, watermark: Boolean) -> Unit
     ): Uri {
         // Baixa para um arquivo temporário, aplica a marca d'água e só então grava na galeria.
@@ -65,14 +65,16 @@ object Library {
         try {
             var ext = fetch(url, raw) { onProgress(it, false) }
             var file = raw
-            if (Watermark.isOn(ctx) && (isVideo || ext != "gif")) {
+            val logo = Watermark.isOn(ctx)
+            val text = phrase?.trim().orEmpty()
+            if ((logo || text.isNotEmpty()) && (isVideo || ext != "gif")) {
                 val out = File.createTempFile("pinsave_wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
                 marked = out
                 onProgress(-1, true)
                 if (isVideo) {
-                    Watermark.video(ctx, raw, out) { onProgress(it, true) }
+                    Watermark.video(ctx, raw, out, logo, text) { onProgress(it, true) }
                 } else {
-                    ext = Watermark.image(ctx, raw, out, ext)
+                    ext = Watermark.image(ctx, raw, out, ext, logo, text)
                 }
                 file = out
             }
@@ -80,6 +82,45 @@ object Library {
         } finally {
             raw.delete()
             marked?.delete()
+        }
+    }
+
+    /**
+     * Grava uma frase num arquivo já baixado. O arquivo novo substitui o
+     * antigo e herda a legenda e as marcas de "postado".
+     */
+    fun addPhrase(ctx: Context, uri: Uri, phrase: String, onProgress: (Progress) -> Unit): Uri {
+        val isVideo = !Keys.isImage(uri)
+        val resolver = ctx.contentResolver
+        val raw = File.createTempFile("pinsave_src", null, ctx.cacheDir)
+        var edited: File? = null
+        try {
+            onProgress(Progress(0, 1, -1, true))
+            val input = resolver.openInputStream(uri) ?: throw IOException("Arquivo não encontrado")
+            input.use { i -> raw.outputStream().use { i.copyTo(it, 65536) } }
+            val out = File.createTempFile("pinsave_wm", if (isVideo) ".mp4" else ".img", ctx.cacheDir)
+            edited = out
+            val ext = if (isVideo) {
+                Watermark.video(ctx, raw, out, false, phrase) { onProgress(Progress(0, 1, it, true)) }
+                "mp4"
+            } else {
+                Watermark.image(ctx, raw, out, if (resolver.getType(uri) == "image/png") "png" else "jpg", false, phrase)
+            }
+            val created = insert(ctx, out, "frase", isVideo, 0, ext)
+            Captions.set(ctx, created, Captions.get(ctx, uri))
+            Posted.copy(ctx, uri, created)
+            try {
+                if (resolver.delete(uri, null, null) > 0) {
+                    Captions.set(ctx, uri, "")
+                    Posted.clear(ctx, uri)
+                }
+            } catch (e: Exception) {
+                // não deu para apagar o antigo: ficam os dois na lista
+            }
+            return created
+        } finally {
+            raw.delete()
+            edited?.delete()
         }
     }
 
@@ -289,6 +330,11 @@ object Posted {
     }
 
     fun clear(ctx: Context, uri: Uri) = prefs(ctx).edit().remove(Keys.of(uri)).apply()
+
+    fun copy(ctx: Context, from: Uri, to: Uri) {
+        val marks = get(ctx, from)
+        if (marks.isNotEmpty()) prefs(ctx).edit().putStringSet(Keys.of(to), HashSet(marks)).apply()
+    }
 }
 
 object Clip {

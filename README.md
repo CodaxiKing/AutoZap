@@ -45,6 +45,13 @@ centralizada na parte de baixo do quadro. Em vídeos isso exige recodificar o ar
 aparelho, o que leva mais ou menos o tempo de duração do vídeo. A logo fica em
 `app/src/main/res/drawable-nodpi/watermark.png`. GIFs são salvos sem a marca.
 
+### Frase no vídeo
+
+Com "Pedir a frase do vídeo antes de baixar" ativado, o pop-up traz um campo para a frase.
+Ela é gravada em branco, pequena, no meio do quadro. Deixe em branco para baixar sem frase.
+Em algo já baixado, use o menu ⋮ → "Adicionar frase": o arquivo é substituído pela versão
+com a frase. A frase gravada não pode ser removida depois.
+
 ### Imagens e carrosséis
 
 Pins sem vídeo são baixados como imagem. Em carrosséis, todas as imagens são baixadas e

@@ -62,8 +62,8 @@ class DownloadService : Service() {
     }
 
     private fun next() {
-        val link = queue.pollFirst()
-        if (link == null) {
+        val job = queue.pollFirst()
+        if (job == null) {
             running = false
             current = null
             total = 0
@@ -75,21 +75,26 @@ class DownloadService : Service() {
             stopSelf()
             return
         }
-        current = link
+        current = job.key
         val app = applicationContext
         worker.execute {
             try {
-                val uris = Library.download(app, link) { p -> main.post { progress(link, p) } }
-                main.post { done(link, uris) }
+                val report: (Progress) -> Unit = { p -> main.post { progress(job.key, p) } }
+                val uris = when {
+                    job.link != null -> Library.download(app, job.link, job.phrase, report)
+                    job.source != null -> listOf(Library.addPhrase(app, job.source, job.phrase.orEmpty(), report))
+                    else -> emptyList()
+                }
+                main.post { done(job.key, uris) }
             } catch (e: Exception) {
                 val message = friendly(e)
-                main.post { failed(link, message) }
+                main.post { failed(job.key, message, job.link ?: "") }
             }
         }
     }
 
     private fun progress(link: String, p: Progress) {
-        val verb = if (p.watermark) "Aplicando marca d'água" else "Baixando"
+        val verb = if (p.watermark) "Gravando logo e frase" else "Baixando"
         var text = if (total > 1) "$verb ${finished + 1} de $total" else verb
         if (p.count > 1) text += " (arquivo ${p.index + 1}/${p.count})"
         status = text
@@ -110,13 +115,13 @@ class DownloadService : Service() {
         next()
     }
 
-    private fun failed(link: String, message: String) {
+    private fun failed(link: String, message: String, shown: String) {
         finished++
         val listener = listeners.remove(link)
         if (listener != null) {
             listener.onFail(message)
         } else {
-            notifyResult("Não foi possível baixar", "$message\n$link", null)
+            notifyResult("Não foi possível concluir", "$message\n$shown".trim(), null)
         }
         observer?.invoke(status, true)
         next()
@@ -176,7 +181,9 @@ class DownloadService : Service() {
 
         // Tudo abaixo só é tocado na thread principal.
         private val main = Handler(Looper.getMainLooper())
-        private val queue = ArrayDeque<String>()
+        private class Job(val key: String, val link: String?, val source: Uri?, val phrase: String?)
+
+        private val queue = ArrayDeque<Job>()
         private val listeners = HashMap<String, Listener>()
         private var current: String? = null
         private var running = false
@@ -189,18 +196,30 @@ class DownloadService : Service() {
 
         val currentStatus: String? get() = status
 
-        /** Chame da thread principal, com o app em primeiro plano. */
-        fun enqueue(ctx: Context, link: String, listener: Listener?) {
+        /**
+         * Põe um link na fila. [phrase] é gravada no meio do vídeo ou imagem.
+         * Chame da thread principal, com o app em primeiro plano.
+         */
+        fun enqueue(ctx: Context, link: String, listener: Listener?, phrase: String? = null) {
             if (listener != null) listeners[link] = listener
-            if (link == current || queue.contains(link)) return
-            queue.add(link)
+            add(ctx, Job(link, link, null, phrase))
+        }
+
+        /** Põe na fila a gravação de uma frase num arquivo já baixado. */
+        fun enqueuePhrase(ctx: Context, uri: Uri, phrase: String) {
+            add(ctx, Job("frase:" + Keys.of(uri), null, uri, phrase))
+        }
+
+        private fun add(ctx: Context, job: Job) {
+            if (job.key == current || queue.any { it.key == job.key }) return
+            queue.add(job)
             total++
             try {
                 ctx.startForegroundService(Intent(ctx, DownloadService::class.java))
             } catch (e: Exception) {
-                queue.remove(link)
+                queue.remove(job)
                 total--
-                listeners.remove(link)?.onFail("Não foi possível iniciar o download em segundo plano")
+                listeners.remove(job.key)?.onFail("Não foi possível iniciar o trabalho em segundo plano")
             }
         }
 

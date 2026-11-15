@@ -74,13 +74,13 @@ class PopupActivity : Activity() {
                     toast("Isso não é um link do Pinterest nem do Instagram")
                     finish()
                 } else {
-                    download(link)
+                    start(link)
                 }
             }
             i.hasExtra(EXTRA_LINK) -> when {
                 link == null -> finish()
                 i.getBooleanExtra(EXTRA_ASK, false) -> ask(link)
-                else -> download(link)
+                else -> start(link)
             }
             else -> {
                 // Veio da notificação ou do bloco: o link ainda precisa ser lido da
@@ -105,7 +105,7 @@ class PopupActivity : Activity() {
             link != null -> {
                 checking = false
                 // o botão flutuante já é um pedido para baixar: não pergunta de novo
-                if (intent.getBooleanExtra(EXTRA_DIRECT, false)) download(link) else ask(link)
+                if (intent.getBooleanExtra(EXTRA_DIRECT, false)) start(link) else ask(link)
             }
             ++attempts < 5 -> main.postDelayed({ check() }, 400)
             else -> {
@@ -116,15 +116,31 @@ class PopupActivity : Activity() {
         }
     }
 
+    /** Quem já pediu para baixar só passa pelo diálogo se o app deve pedir a frase. */
+    private fun start(link: String) {
+        if (Watermark.asksPhrase(this)) ask(link) else download(link, null)
+    }
+
     private fun ask(link: String) {
         busy = true
+        val builder = AlertDialog.Builder(this)
+            .setTitle(if (InstagramExtractor.isInstagram(link)) "Baixar do Instagram?" else "Baixar do Pinterest?")
+        // Campo opcional para a frase que fica no meio do vídeo.
+        val phraseBox = if (Watermark.asksPhrase(this)) {
+            CaptionUi.box(
+                this, "", "Frase no meio do vídeo (opcional)",
+                "A frase fica gravada no vídeo, em branco, no centro.", templates = false
+            )
+        } else {
+            null
+        }
+        if (phraseBox != null) builder.setView(phraseBox.view) else builder.setMessage(link)
+        val phrase = { phraseBox?.field?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
         show(
-            AlertDialog.Builder(this)
-                .setTitle(if (InstagramExtractor.isInstagram(link)) "Baixar do Instagram?" else "Baixar do Pinterest?")
-                .setMessage(link)
-                .setPositiveButton("Baixar") { _, _ -> download(link) }
+            builder
+                .setPositiveButton("Baixar") { _, _ -> download(link, phrase()) }
                 .setNeutralButton("Em 2º plano") { _, _ ->
-                    DownloadService.enqueue(this, link, null)
+                    DownloadService.enqueue(this, link, null, phrase())
                     toast("Na fila — aviso por notificação quando terminar")
                     finish()
                 }
@@ -134,7 +150,7 @@ class PopupActivity : Activity() {
         )
     }
 
-    private fun download(link: String) {
+    private fun download(link: String, phrase: String?) {
         busy = true
         val pad = (24 * resources.displayMetrics.density).toInt()
         val status = TextView(this).apply { text = "Na fila…" }
@@ -183,7 +199,7 @@ class PopupActivity : Activity() {
                 }
                 .create()
         )
-        DownloadService.enqueue(this, link, l)
+        DownloadService.enqueue(this, link, l, phrase)
     }
 
     private fun done(uris: List<Uri>) {
