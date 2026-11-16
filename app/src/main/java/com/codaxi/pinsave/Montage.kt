@@ -224,8 +224,16 @@ object Beats {
         while (total - t > maxLen) {
             val best = peaks.filter { it.first >= t + minLen && it.first <= t + maxLen }.maxByOrNull { it.second }
             val cut = best?.first ?: (t + (minLen + maxLen) / 2f)
-            // não deixa sobrar um restinho curto demais no final
-            if (total - cut < minLen) break
+            // não deixa sobrar um restinho curto demais no final:
+            // divide o que falta em duas partes iguais, se couber
+            if (total - cut < minLen) {
+                val half = (total - t) / 2f
+                if (half >= minLen) {
+                    out.add(half)
+                    t += half
+                }
+                break
+            }
             out.add(cut - t)
             t = cut
         }
