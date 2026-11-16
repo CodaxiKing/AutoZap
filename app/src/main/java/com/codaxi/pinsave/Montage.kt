@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.media3.common.Effect
@@ -18,6 +19,7 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import com.google.common.collect.ImmutableList
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.exp
 import kotlin.math.sqrt
@@ -30,11 +32,11 @@ object Montage {
     private const val FAIL = "Não foi possível montar o vídeo neste aparelho. Tente com menos partes ou outra música."
 
     /**
-     * Junta os trechos em 1080x1920, sem o som original, com a música por
-     * cima. Bloqueante; [onProgress] recebe 0..100.
+     * Junta os trechos em sequência, em 1080x1920 e sem som. Usa uma única
+     * sequência de vídeo, que é o caso mais bem suportado pelo Transformer.
+     * Bloqueante; [onProgress] recebe 0..100.
      */
-    fun render(ctx: Context, parts: List<Part>, music: File, dst: File, onProgress: (Int) -> Unit) {
-        val total = parts.sumOf { it.seconds.toDouble() }
+    fun concat(ctx: Context, parts: List<Part>, dst: File, onProgress: (Int) -> Unit) {
         Watermark.export(ctx, dst, FAIL, onProgress) { transformer ->
             val clips = parts.map { part ->
                 val item = MediaItem.Builder()
@@ -57,19 +59,104 @@ object Montage {
                     .setEffects(Effects(emptyList(), effects))
                     .build()
             }
-            val song = EditedMediaItem.Builder(
-                MediaItem.Builder()
-                    .setUri(Uri.fromFile(music))
-                    .setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder().setEndPositionMs((total * 1000).toLong()).build()
-                    )
-                    .build()
-            ).setRemoveVideo(true).build()
-            val composition = Composition.Builder(
-                EditedMediaItemSequence(ImmutableList.copyOf(clips)),
-                EditedMediaItemSequence(ImmutableList.of(song))
-            ).build()
-            transformer.start(composition, dst.absolutePath)
+            transformer.start(
+                Composition.Builder(EditedMediaItemSequence(ImmutableList.copyOf(clips))).build(),
+                dst.absolutePath
+            )
+        }
+    }
+
+    /**
+     * Converte os primeiros [seconds] da música (áudio ou vídeo) para AAC em
+     * um .m4a, o formato que dá para encaixar direto no vídeo. Bloqueante.
+     */
+    fun prepareAudio(ctx: Context, music: File, seconds: Float, dst: File, onProgress: (Int) -> Unit) {
+        Watermark.export(ctx, dst, "Não foi possível ler a música. Tente outro arquivo de áudio.", onProgress) { transformer ->
+            val item = MediaItem.Builder()
+                .setUri(Uri.fromFile(music))
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder().setEndPositionMs((seconds * 1000).toLong()).build()
+                )
+                .build()
+            transformer.start(EditedMediaItem.Builder(item).setRemoveVideo(true).build(), dst.absolutePath)
+        }
+    }
+
+    /** Se o arquivo já tem áudio AAC, que pode ser encaixado sem converter. */
+    fun hasAacAudio(file: File): Boolean {
+        val ex = MediaExtractor()
+        return try {
+            ex.setDataSource(file.absolutePath)
+            (0 until ex.trackCount).any { ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME) == MediaFormat.MIMETYPE_AUDIO_AAC }
+        } catch (e: Exception) {
+            false
+        } finally {
+            ex.release()
+        }
+    }
+
+    /**
+     * Grava em [dst] o vídeo de [video] com o áudio de [audio], copiando as
+     * amostras sem recodificar. O áudio é cortado no fim do vídeo. Bloqueante.
+     */
+    fun mux(video: File, audio: File, dst: File) {
+        val vEx = MediaExtractor()
+        val aEx = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        try {
+            vEx.setDataSource(video.absolutePath)
+            aEx.setDataSource(audio.absolutePath)
+            val vTrack = (0 until vEx.trackCount).first {
+                vEx.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }
+            val aTrack = (0 until aEx.trackCount).first {
+                aEx.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            }
+            vEx.selectTrack(vTrack)
+            aEx.selectTrack(aTrack)
+            val vFormat = vEx.getTrackFormat(vTrack)
+            val aFormat = aEx.getTrackFormat(aTrack)
+            val videoEndUs = if (vFormat.containsKey(MediaFormat.KEY_DURATION)) vFormat.getLong(MediaFormat.KEY_DURATION) else Long.MAX_VALUE
+
+            val m = MediaMuxer(dst.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = m
+            if (vFormat.containsKey(MediaFormat.KEY_ROTATION)) m.setOrientationHint(vFormat.getInteger(MediaFormat.KEY_ROTATION))
+            val vOut = m.addTrack(vFormat)
+            val aOut = m.addTrack(aFormat)
+            m.start()
+            val size = maxOf(
+                1 shl 20,
+                if (vFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) vFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 0,
+                if (aFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) aFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 0
+            )
+            val buffer = ByteBuffer.allocate(size)
+            val info = MediaCodec.BufferInfo()
+            fun copy(ex: MediaExtractor, track: Int, endUs: Long) {
+                while (true) {
+                    buffer.clear()
+                    val n = ex.readSampleData(buffer, 0)
+                    if (n < 0) break
+                    val time = ex.sampleTime
+                    if (time > endUs) break
+                    val key = ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
+                    info.set(0, n, time, if (key) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                    m.writeSampleData(track, buffer, info)
+                    ex.advance()
+                }
+            }
+            copy(vEx, vOut, Long.MAX_VALUE)
+            copy(aEx, aOut, videoEndUs)
+            m.stop()
+        } catch (e: Exception) {
+            throw Watermark.WatermarkException("Não foi possível juntar a música com o vídeo.", e)
+        } finally {
+            try {
+                muxer?.release()
+            } catch (e: Exception) {
+                // nada a fazer
+            }
+            vEx.release()
+            aEx.release()
         }
     }
 

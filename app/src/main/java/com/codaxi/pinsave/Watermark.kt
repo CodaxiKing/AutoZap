@@ -260,7 +260,16 @@ object Watermark {
         }
         val finished = latch.await(20, TimeUnit.MINUTES)
         if (!finished) main.post { try { transformer?.cancel() } catch (e: Exception) { } }
-        if (!finished || error != null || dst.length() < 1024) throw WatermarkException(fail, error)
+        if (!finished) throw WatermarkException("$fail\n(detalhe: demorou demais)", error)
+        if (error != null || dst.length() < 1024) throw WatermarkException(fail + detail(error), error)
+    }
+
+    /** Código curto do erro, para o usuário poder mandar no print. */
+    private fun detail(error: Throwable?): String {
+        if (error == null) return "\n(detalhe: arquivo vazio)"
+        val code = (error as? ExportException)?.errorCodeName ?: error.javaClass.simpleName
+        val cause = generateSequence(error.cause) { it.cause }.lastOrNull()?.message?.take(120)
+        return "\n(detalhe: $code" + (if (cause.isNullOrBlank()) "" else " — $cause") + ")"
     }
 
     /** Largura e altura do vídeo como ele é exibido (já considerando a rotação). */

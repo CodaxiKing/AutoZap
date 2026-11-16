@@ -108,21 +108,38 @@ object Library {
                         fetch(url, f, emptyMap()) { onProgress(Progress(i, parts.size, it)) }
                     }
                 }
-                Montage.Part(file, seconds)
+                // trecho mais curto que a parte: usa o que ele tiver
+                val length = Montage.duration(file)
+                Montage.Part(file, if (length > 0.3f) minOf(seconds, length - 0.1f) else seconds)
             }
+            val totalSeconds = clips.sumOf { it.seconds.toDouble() }.toFloat()
             val logo = Watermark.isOn(ctx)
             val text = phrase.trim()
             val stamp = logo || text.isNotEmpty()
 
+            // 1) junta os trechos, sem som
             val cut = File.createTempFile("pinsave_cut", ".mp4", ctx.cacheDir).also { temps.add(it) }
             onProgress(Progress(0, 1, -1, true))
-            Montage.render(ctx, clips, music, cut) { onProgress(Progress(0, 1, if (stamp) it / 2 else it, true)) }
-            var result = cut
+            Montage.concat(ctx, clips, cut) { onProgress(Progress(0, 1, if (stamp) it * 45 / 100 else it * 85 / 100, true)) }
+            var silent = cut
+            // 2) frase e logo
             if (stamp) {
                 val marked = File.createTempFile("pinsave_wm", ".mp4", ctx.cacheDir).also { temps.add(it) }
-                Watermark.video(ctx, cut, marked, logo, text) { onProgress(Progress(0, 1, 50 + it / 2, true)) }
-                result = marked
+                Watermark.video(ctx, cut, marked, logo, text) { onProgress(Progress(0, 1, 45 + it * 40 / 100, true)) }
+                silent = marked
             }
+            // 3) música em AAC; se a conversão falhar e ela já for AAC, usa como está
+            val audio = File.createTempFile("pinsave_song", ".m4a", ctx.cacheDir).also { temps.add(it) }
+            val song = try {
+                Montage.prepareAudio(ctx, music, totalSeconds + 0.5f, audio) { onProgress(Progress(0, 1, 85 + it * 10 / 100, true)) }
+                audio
+            } catch (e: Watermark.WatermarkException) {
+                if (Montage.hasAacAudio(music)) music else throw e
+            }
+            // 4) encaixa a música no vídeo, sem recodificar
+            val result = File.createTempFile("pinsave_final", ".mp4", ctx.cacheDir).also { temps.add(it) }
+            Montage.mux(silent, song, result)
+            onProgress(Progress(0, 1, 100, true))
             val uri = insert(ctx, result, "montagem", true, 0, "mp4")
             val out = listOf(uri)
             val withTags = { s: String -> listOf(s.trim(), tags.trim()).filter { it.isNotEmpty() }.joinToString("\n\n") }
