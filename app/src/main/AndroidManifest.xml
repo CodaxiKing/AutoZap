@@ -54,6 +54,12 @@
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize" />
 
+        <!-- Monta um vídeo com vários trechos no ritmo de uma música. -->
+        <activity
+            android:name=".MontageActivity"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+
         <!-- Pop-up transparente: pergunta se quer baixar, baixa e oferece postar. -->
         <activity
             android:name=".PopupActivity"

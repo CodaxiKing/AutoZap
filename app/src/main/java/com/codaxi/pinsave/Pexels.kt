@@ -13,7 +13,8 @@ import java.net.URLEncoder
  */
 object Pexels {
     /** Um vídeo ou foto do banco: miniatura para escolher e arquivo para baixar. */
-    class Clip(val thumb: String, val url: String)
+    /** [seconds] é a duração, só preenchida para vídeos. */
+    class Clip(val thumb: String, val url: String, val seconds: Int = 0)
 
     class PexelsException(message: String) : IOException(message)
 
@@ -54,22 +55,22 @@ object Pexels {
     fun setKey(ctx: Context, key: String) = prefs(ctx).edit().putString("pexels_key", key.trim()).apply()
 
     /** Vídeos verticais para a busca. Bloqueante. */
-    fun videos(key: String, query: String, page: Int): List<Clip> {
+    fun videos(key: String, query: String, page: Int, side: Int = 1080): List<Clip> {
         val json = get(key, "https://api.pexels.com/videos/search?orientation=portrait&per_page=30&page=$page&query=" + enc(query))
         val out = ArrayList<Clip>()
         val videos = json.optJSONArray("videos") ?: return out
         for (i in 0 until videos.length()) {
             val v = videos.optJSONObject(i) ?: continue
             val files = v.optJSONArray("video_files") ?: continue
-            // o arquivo mais próximo de 1080 de largura, sem passar disso se der
+            // o arquivo mais próximo do tamanho pedido, sem passar dele se der
             var best: JSONObject? = null
             var bestScore = Int.MAX_VALUE
             for (j in 0 until files.length()) {
                 val f = files.optJSONObject(j) ?: continue
                 if (f.optString("file_type") != "video/mp4") continue
-                val side = minOf(f.optInt("width"), f.optInt("height"))
-                if (side <= 0) continue
-                val score = if (side <= 1080) 1080 - side else (side - 1080) * 4
+                val size = minOf(f.optInt("width"), f.optInt("height"))
+                if (size <= 0) continue
+                val score = if (size <= side) side - size else (size - side) * 4
                 if (score < bestScore) {
                     bestScore = score
                     best = f
@@ -77,7 +78,7 @@ object Pexels {
             }
             val link = best?.optString("link").orEmpty()
             val thumb = v.optString("image")
-            if (link.startsWith("http") && thumb.startsWith("http")) out.add(Clip(thumb, link))
+            if (link.startsWith("http") && thumb.startsWith("http")) out.add(Clip(thumb, link, v.optInt("duration")))
         }
         return out
     }

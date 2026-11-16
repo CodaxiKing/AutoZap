@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private lateinit var reminderRow: TextView
     private lateinit var aiRow: TextView
     private lateinit var bankRow: TextView
+    private lateinit var musicRow: TextView
     private lateinit var tagsRow: TextView
     private lateinit var templatesRow: TextView
     private lateinit var filterAll: Button
@@ -167,6 +168,12 @@ class MainActivity : Activity() {
         )
         header.addView(create, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
         header.addView(
+            pill("Criar montagem com música", accent) {
+                startActivity(Intent(this, MontageActivity::class.java))
+            },
+            LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+        )
+        header.addView(
             pill("Criar vários vídeos de uma vez", Color.parseColor("#2F3138")) {
                 startActivity(Intent(this, GeneratorActivity::class.java).putExtra(GeneratorActivity.EXTRA_BATCH, true))
             },
@@ -199,6 +206,9 @@ class MainActivity : Activity() {
             updateRows()
         }
         header.addView(phraseRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        musicRow = settingRow { manageMusic() }
+        header.addView(musicRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
         bankRow = settingRow { manageBank() }
         header.addView(bankRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
@@ -298,7 +308,10 @@ class MainActivity : Activity() {
         showQueue(DownloadService.currentStatus)
         DownloadService.observer = { status, itemFinished ->
             showQueue(status)
-            if (itemFinished) refresh()
+            if (itemFinished) {
+                refresh()
+                updateRows()
+            }
         }
     }
 
@@ -332,6 +345,9 @@ class MainActivity : Activity() {
         phraseRow.text = if (asks) "✓  Pedir a frase do vídeo antes de baixar: ativado"
         else "❝  Pedir a frase do vídeo antes de baixar"
         phraseRow.setTextColor(if (asks) green else Color.WHITE)
+
+        val songs = Library.audios(this).size
+        musicRow.text = if (songs == 0) "♪  Extrair a música de um vídeo" else "♪  Músicas extraídas: $songs"
 
         val bank = PhraseBank.list(this)
         bankRow.text = if (bank.isEmpty()) "❝  Criar banco de frases"
@@ -421,6 +437,60 @@ class MainActivity : Activity() {
     }
 
     /** Banco de frases: adicionar várias de uma vez, remover e zerar as marcas de "usada". */
+    private fun manageMusic() {
+        val songs = Library.audios(this)
+        val labels = listOf("+ Extrair de um vídeo do celular") + songs.map { songLabel(it) }
+        AlertDialog.Builder(this)
+            .setTitle("Músicas extraídas")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    try {
+                        startActivityForResult(
+                            Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"),
+                            PICK_VIDEO
+                        )
+                    } catch (e: Exception) {
+                        toast("Nenhum seletor de arquivos encontrado")
+                    }
+                } else {
+                    val song = songs[which - 1]
+                    AlertDialog.Builder(this)
+                        .setMessage(songLabel(song))
+                        .setPositiveButton("Ouvir") { _, _ ->
+                            try {
+                                startActivity(
+                                    Intent(Intent.ACTION_VIEW).setDataAndType(song.uri, "audio/*")
+                                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                )
+                            } catch (e: Exception) {
+                                toast("Nenhum player de áudio encontrado")
+                            }
+                        }
+                        .setNeutralButton("Excluir") { _, _ ->
+                            Library.deleteAudio(this, song)
+                            updateRows()
+                        }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun songLabel(song: Item): String =
+        "Áudio de " + DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(song.addedSec * 1000)) +
+            " · " + Formatter.formatShortFileSize(this, song.size)
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = data?.data ?: return
+        if (requestCode == PICK_VIDEO && resultCode == RESULT_OK) {
+            DownloadService.enqueueAudio(this, uri)
+            toast("Extraindo o áudio. Aviso quando terminar.")
+        }
+    }
+
     private fun manageBank() {
         val entries = PhraseBank.list(this)
         val labels = listOf("+ Adicionar frases") +
@@ -624,6 +694,7 @@ class MainActivity : Activity() {
             menu.add(0, 1, 0, if (item.isImage) "Ver imagem" else "Assistir")
             menu.add(0, 2, 1, "Editar legenda")
             menu.add(0, 6, 1, if (item.isImage) "Adicionar frase na imagem" else "Adicionar frase no vídeo")
+            if (!item.isImage) menu.add(0, 7, 1, "Extrair o áudio (música)")
             if (posted) menu.add(0, 3, 2, "Desmarcar como postado")
             menu.add(0, 4, 3, "Compartilhar em outro app")
             menu.add(0, 5, 4, "Excluir")
@@ -631,6 +702,10 @@ class MainActivity : Activity() {
                 when (it.itemId) {
                     1 -> open(item)
                     2 -> editCaption(item)
+                    7 -> {
+                        DownloadService.enqueueAudio(this@MainActivity, item.uri)
+                        toast("Extraindo o áudio. Ele aparece em \"Músicas extraídas\".")
+                    }
                     6 -> editText("Frase", "Frase que aparece no meio, em branco", "") { text ->
                         if (text.isBlank()) {
                             toast("Escreva a frase")
@@ -769,6 +844,7 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        const val PICK_VIDEO = 10
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     }

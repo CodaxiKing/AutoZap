@@ -81,7 +81,7 @@ class DownloadService : Service() {
             try {
                 val report: (Progress) -> Unit = { p -> main.post { progress(job.key, p) } }
                 val uris = job.work(app, report)
-                main.post { done(job.key, uris) }
+                main.post { done(job.key, uris, job.doneTitle) }
             } catch (e: Exception) {
                 val message = friendly(e)
                 main.post { failed(job.key, message, job.shown) }
@@ -90,7 +90,7 @@ class DownloadService : Service() {
     }
 
     private fun progress(link: String, p: Progress) {
-        val verb = if (p.watermark) "Gravando logo e frase" else "Baixando"
+        val verb = if (p.watermark) "Editando" else "Baixando"
         var text = if (total > 1) "$verb ${finished + 1} de $total" else verb
         if (p.count > 1) text += " (arquivo ${p.index + 1}/${p.count})"
         status = text
@@ -103,10 +103,14 @@ class DownloadService : Service() {
         observer?.invoke(if (p.pct >= 0) "$text… ${p.pct}%" else "$text…", false)
     }
 
-    private fun done(link: String, uris: List<Uri>) {
+    private fun done(link: String, uris: List<Uri>, doneTitle: String?) {
         finished++
         val listener = listeners.remove(link)
-        if (listener != null) listener.onDone(uris) else notifyDone(uris)
+        when {
+            listener != null -> listener.onDone(uris)
+            doneTitle != null -> notifyResult(doneTitle, "Está em \"Músicas extraídas\", na tela principal do PinSave", null)
+            else -> notifyDone(uris)
+        }
         observer?.invoke(status, true)
         next()
     }
@@ -178,8 +182,10 @@ class DownloadService : Service() {
         // Tudo abaixo só é tocado na thread principal.
         private val main = Handler(Looper.getMainLooper())
         /** [shown] identifica o trabalho para o usuário em caso de erro. */
+        /** [doneTitle], se dado, é o aviso de conclusão para trabalhos que não geram vídeo ou imagem. */
         private class Job(
-            val key: String, val shown: String, val work: (Context, (Progress) -> Unit) -> List<Uri>
+            val key: String, val shown: String, val doneTitle: String? = null,
+            val work: (Context, (Progress) -> Unit) -> List<Uri>
         )
 
         private val queue = ArrayDeque<Job>()
@@ -210,6 +216,23 @@ class DownloadService : Service() {
         }
 
         /** Põe na fila a criação de um vídeo ou carrossel a partir do banco. */
+        /** Põe na fila uma montagem: vários trechos em sequência sobre a música. */
+        fun enqueueMontage(
+            ctx: Context, key: String, listener: Listener?, music: java.io.File, parts: List<Pair<String, Float>>,
+            phrase: String, caption: String, tags: String
+        ) {
+            if (listener != null) listeners[key] = listener
+            add(ctx, Job(key, "") { c, report -> Library.montage(c, music, parts, phrase, caption, tags, report) })
+        }
+
+        /** Põe na fila a extração do áudio de um vídeo. */
+        fun enqueueAudio(ctx: Context, source: Uri) {
+            add(ctx, Job("audio:$source", "", "Áudio extraído") { c, report ->
+                Library.extractAudio(c, source, report)
+                emptyList()
+            })
+        }
+
         fun enqueueGenerate(
             ctx: Context, key: String, listener: Listener?, clips: List<Pair<String, String>>,
             isVideo: Boolean, caption: String, tags: String

@@ -22,6 +22,7 @@ class Progress(val index: Int, val count: Int, val pct: Int, val watermark: Bool
 object Library {
     private const val VIDEO_DIR = "Movies/PinSave"
     private const val IMAGE_DIR = "Pictures/PinSave"
+    private const val AUDIO_DIR = "Music/PinSave"
 
     /**
      * Bloqueante. Devolve um arquivo para pins comuns e vários para carrosséis.
@@ -86,6 +87,100 @@ object Library {
             )
         }
         return out
+    }
+
+    /**
+     * Monta um vídeo com vários trechos do banco em sequência sobre a música.
+     * Cada parte é (endereço do vídeo, segundos). Depois de montado, recebe a
+     * frase e a logo como qualquer outro vídeo.
+     */
+    fun montage(
+        ctx: Context, music: File, parts: List<Pair<String, Float>>, phrase: String, caption: String, tags: String,
+        onProgress: (Progress) -> Unit
+    ): List<Uri> {
+        val temps = ArrayList<File>()
+        try {
+            val byUrl = HashMap<String, File>()   // o mesmo fundo pode aparecer em mais de uma parte
+            val clips = parts.mapIndexed { i, (url, seconds) ->
+                val file = byUrl.getOrPut(url) {
+                    File.createTempFile("pinsave_clip", ".mp4", ctx.cacheDir).also { f ->
+                        temps.add(f)
+                        fetch(url, f, emptyMap()) { onProgress(Progress(i, parts.size, it)) }
+                    }
+                }
+                Montage.Part(file, seconds)
+            }
+            val logo = Watermark.isOn(ctx)
+            val text = phrase.trim()
+            val stamp = logo || text.isNotEmpty()
+
+            val cut = File.createTempFile("pinsave_cut", ".mp4", ctx.cacheDir).also { temps.add(it) }
+            onProgress(Progress(0, 1, -1, true))
+            Montage.render(ctx, clips, music, cut) { onProgress(Progress(0, 1, if (stamp) it / 2 else it, true)) }
+            var result = cut
+            if (stamp) {
+                val marked = File.createTempFile("pinsave_wm", ".mp4", ctx.cacheDir).also { temps.add(it) }
+                Watermark.video(ctx, cut, marked, logo, text) { onProgress(Progress(0, 1, 50 + it / 2, true)) }
+                result = marked
+            }
+            val uri = insert(ctx, result, "montagem", true, 0, "mp4")
+            val out = listOf(uri)
+            val withTags = { s: String -> listOf(s.trim(), tags.trim()).filter { it.isNotEmpty() }.joinToString("\n\n") }
+            val typed = caption.trim()
+            Captions.set(ctx, uri, withTags(typed))
+            if (typed.isEmpty() || (text.isNotEmpty() && typed.startsWith(text))) {
+                AiCaptions.auto(ctx, out, text, "", suffix = withTags(typed.removePrefix(text)), noHashtags = tags.isNotBlank())
+            }
+            return out
+        } finally {
+            temps.forEach { it.delete() }
+        }
+    }
+
+    /** Extrai só o áudio de um vídeo e salva em Music/PinSave. */
+    fun extractAudio(ctx: Context, source: Uri, onProgress: (Progress) -> Unit): Uri {
+        val tmp = File.createTempFile("pinsave_audio", ".m4a", ctx.cacheDir)
+        try {
+            onProgress(Progress(0, 1, -1, true))
+            Montage.extractAudio(ctx, source, tmp) { onProgress(Progress(0, 1, it, true)) }
+            val resolver = ctx.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "pinsave_audio_${System.currentTimeMillis()}.m4a")
+                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, AUDIO_DIR)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values
+            ) ?: throw IOException("Não foi possível criar o arquivo de áudio")
+            try {
+                val out = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar o áudio")
+                out.use { o -> tmp.inputStream().use { it.copyTo(o, 65536) } }
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                return uri
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                throw if (e is IOException) e else IOException(e)
+            }
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /** Áudios extraídos pelo app, do mais novo para o mais antigo. */
+    fun audios(ctx: Context): List<Item> {
+        val out = ArrayList<Item>()
+        query(ctx, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, AUDIO_DIR, false, out)
+        out.sortByDescending { it.addedSec }
+        return out
+    }
+
+    fun deleteAudio(ctx: Context, item: Item): Boolean = try {
+        ctx.contentResolver.delete(item.uri, null, null) > 0
+    } catch (e: Exception) {
+        false
     }
 
     private fun save(

@@ -198,6 +198,29 @@ object Watermark {
             throw WatermarkException(fail, e)
         }
 
+        export(ctx, dst, fail, onProgress) { t ->
+            val effects = ArrayList<Effect>()
+            if (dark) {
+                effects.add(Brightness(-0.10f))
+                effects.add(Contrast(0.12f))
+                effects.add(HslAdjustment.Builder().adjustSaturation(-30f).build())
+            }
+            if (overlays.isNotEmpty()) effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
+            val item = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(src)))
+                .setEffects(Effects(emptyList(), effects))
+                .build()
+            t.start(item, dst.absolutePath)
+        }
+    }
+
+    /**
+     * Roda uma exportação do Transformer até o fim. [start] recebe o
+     * Transformer já criado e deve iniciar o trabalho gravando em [dst].
+     * Bloqueante; [onProgress] recebe 0..100.
+     */
+    internal fun export(
+        ctx: Context, dst: File, fail: String, onProgress: (Int) -> Unit, start: (Transformer) -> Unit
+    ) {
         val main = Handler(Looper.getMainLooper())
         val latch = CountDownLatch(1)
         var error: Throwable? = null
@@ -219,17 +242,7 @@ object Watermark {
                         latch.countDown()
                     }
                 })
-                val effects = ArrayList<Effect>()
-                if (dark) {
-                    effects.add(Brightness(-0.10f))
-                    effects.add(Contrast(0.12f))
-                    effects.add(HslAdjustment.Builder().adjustSaturation(-30f).build())
-                }
-                if (overlays.isNotEmpty()) effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
-                val item = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(src)))
-                    .setEffects(Effects(emptyList(), effects))
-                    .build()
-                t.start(item, dst.absolutePath)
+                start(t)
 
                 val holder = ProgressHolder()
                 val poll = object : Runnable {

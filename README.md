@@ -72,6 +72,20 @@ O resultado sai escurecido, com a frase no meio e a logo, e a legenda fica pront
 Os fundos vêm do Pexels, que exige uma chave de API gratuita (pexels.com/api). O app já vem
 com uma chave embutida (em `Pexels.kt`); "Trocar a chave do Pexels" no gerador usa outra. Os vídeos do banco não têm música.
 
+### Montagem com música
+
+"Criar montagem com música" faz um vídeo em que as cenas trocam no ritmo da música. Você
+escolhe a música (um áudio extraído pelo app ou qualquer áudio/vídeo do celular), a duração
+máxima, o ritmo das trocas e o tema. O app acha as batidas, divide o vídeo em partes e
+sugere um trecho do banco para cada uma; "Trocar" muda o trecho de cada parte. O resultado
+sai em 1080x1920 com a música, a frase (opcional) e a logo.
+
+### Extrair música
+
+No menu ⋮ de um vídeo, "Extrair o áudio (música)" salva só o som em `Music/PinSave`. Em
+"Músicas extraídas", na tela principal, dá para extrair de qualquer vídeo do celular, ouvir
+e excluir. Os áudios extraídos aparecem na escolha de música da montagem.
+
 ### Banco de frases
 
 Em "Banco de frases" você guarda suas frases (cole várias de uma vez, uma por linha). No
