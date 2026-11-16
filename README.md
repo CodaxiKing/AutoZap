@@ -77,7 +77,8 @@ com uma chave embutida (em `Pexels.kt`); "Trocar a chave do Pexels" no gerador u
 "Criar montagem com música" faz um vídeo em que as cenas trocam no ritmo da música. Você
 escolhe a música (um áudio extraído pelo app ou qualquer áudio/vídeo do celular), a duração
 máxima, o ritmo das trocas e o tema. O app acha as batidas, divide o vídeo em partes e
-sugere um trecho do banco para cada uma; "Trocar" muda o trecho de cada parte. O resultado
+sugere um trecho do banco para cada uma; "Trocar" muda o trecho de cada parte e "Ver vídeo"
+abre o trecho no player. Marcando mais de um tema, as partes alternam entre eles. O resultado
 sai em 1080x1920 com a música, a frase (opcional) e a logo.
 
 ### Extrair música

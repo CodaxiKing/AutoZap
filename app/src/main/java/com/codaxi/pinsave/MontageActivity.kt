@@ -51,10 +51,10 @@ class MontageActivity : Activity() {
     private var music: File? = null
     private var musicSeconds = 0f
     private var pace = 0
-    private var theme = -1
-    private var activeTheme: Pexels.Theme? = null
+    private val chosen = BooleanArray(Pexels.THEMES.size)       // nenhum marcado = aleatório
+    private var activeThemes: List<Pexels.Theme> = emptyList()  // temas da última prévia
     private var tags = ""
-    private var query = ""
+    private var queries: List<String> = emptyList()
     private var page = 1
     private val pool = ArrayList<Pexels.Clip>()
     private val parts = ArrayList<Part>()
@@ -153,19 +153,28 @@ class MontageActivity : Activity() {
         }
         root.addView(paceButton, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        root.addView(label("Tema dos vídeos"))
-        themeButton = pill("Tema: aleatório ▾", card) {
-            val names = listOf("Aleatório") + Pexels.THEMES.map { it.name }
+        root.addView(label("Temas dos vídeos — com mais de um, as partes alternam entre eles"))
+        themeButton = pill("Temas: aleatório ▾", card) {
+            val marks = chosen.copyOf()
             AlertDialog.Builder(this)
-                .setTitle("Tema dos vídeos")
-                .setItems(names.toTypedArray()) { _, which ->
-                    theme = which - 1
-                    themeButton.text = "Tema: ${names[which].lowercase()} ▾"
+                .setTitle("Temas — marque um ou mais")
+                .setMultiChoiceItems(Pexels.THEMES.map { it.name }.toTypedArray(), marks) { _, which, on ->
+                    marks[which] = on
                 }
+                .setPositiveButton("OK") { _, _ ->
+                    marks.copyInto(chosen)
+                    val names = Pexels.THEMES.filterIndexed { i, _ -> chosen[i] }.map { it.name.lowercase() }
+                    themeButton.text = "Temas: " + (if (names.isEmpty()) "aleatório" else names.joinToString(", ")) + " ▾"
+                }
+                .setNeutralButton("Aleatório") { _, _ ->
+                    chosen.fill(false)
+                    themeButton.text = "Temas: aleatório ▾"
+                }
+                .setNegativeButton("Cancelar", null)
                 .show()
         }
         root.addView(themeButton, LinearLayout.LayoutParams(MATCH, WRAP))
-        searchField = field("ou busque outro tema (em inglês acha mais)", InputType.TYPE_CLASS_TEXT)
+        searchField = field("busca extra, opcional (em inglês acha mais)", InputType.TYPE_CLASS_TEXT)
         root.addView(searchField, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
 
         root.addView(label("Frase no meio do vídeo (opcional)"))
@@ -293,13 +302,21 @@ class MontageActivity : Activity() {
         val total = minOf(limit.toFloat(), musicSeconds)
         val speed = paces[pace]
         val custom = searchField.text.toString().trim()
-        activeTheme = when {
-            custom.isNotEmpty() -> null
-            theme >= 0 -> Pexels.THEMES[theme]
-            else -> Pexels.THEMES.random()
+        val marked = Pexels.THEMES.filterIndexed { i, _ -> chosen[i] }
+        activeThemes = when {
+            marked.isNotEmpty() -> marked
+            custom.isNotEmpty() -> emptyList()
+            else -> listOf(Pexels.THEMES.random())
         }
-        query = activeTheme?.query ?: "$custom dark"
-        tags = Pexels.tags(this, activeTheme)
+        // a busca extra entra como mais uma fonte, junto com os temas marcados
+        queries = activeThemes.map { it.query } + (if (custom.isNotEmpty()) listOf("$custom dark") else emptyList())
+        tags = when (activeThemes.size) {
+            0 -> Pexels.tags(this, null)
+            1 -> Pexels.tags(this, activeThemes[0])
+            // vários temas: junta as hashtags de todos, sem repetir
+            else -> activeThemes.flatMap { Pexels.tags(this, it).split(Regex("\\s+")) }
+                .filter { it.isNotBlank() }.distinct().take(12).joinToString(" ")
+        }
         page = 1
         pool.clear()
         toast("Analisando a música e buscando vídeos…")
@@ -334,12 +351,17 @@ class MontageActivity : Activity() {
 
     private fun loadMore(then: () -> Unit) {
         val key = Pexels.key(this)
-        val q = query
+        val all = queries
         val p = page++
         worker.execute {
             try {
                 // arquivos menores: são vários por montagem
-                val found = Pexels.videos(key, q, p, 720).shuffled()
+                val lists = all.map { Pexels.videos(key, it, p, 720).shuffled() }
+                // intercala os temas, para as partes alternarem entre eles
+                val found = ArrayList<Pexels.Clip>()
+                for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) {
+                    lists.forEach { list -> if (i < list.size) found.add(list[i]) }
+                }
                 main.post {
                     if (isFinishing || isDestroyed) return@post
                     pool.addAll(0, found)
@@ -376,15 +398,31 @@ class MontageActivity : Activity() {
                 // a cada volta completa pelos fundos já vistos, busca mais uma página
                 if (++swaps % maxOf(1, pool.size) == 0) loadMore(change) else change()
             }
+            // abre o trecho inteiro no player, para decidir se fica ou troca
+            val watch = { openClip(part.clip.url) }
+            image.setOnClickListener { watch() }
+            val buttons = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(pill("Ver vídeo", Color.parseColor("#2F3138")) { watch() }, LinearLayout.LayoutParams(MATCH, WRAP))
+                addView(swap, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
+            }
             partsBox.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 0, 0, dp(10))
                 addView(image, LinearLayout.LayoutParams(dp(63), dp(112)))
                 addView(info, LinearLayout.LayoutParams(0, WRAP, 1f))
-                addView(swap)
+                addView(buttons, LinearLayout.LayoutParams(dp(120), WRAP))
             })
             start += part.seconds
+        }
+    }
+
+    private fun openClip(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), "video/mp4"))
+        } catch (e: Exception) {
+            toast("Nenhum player de vídeo encontrado")
         }
     }
 
@@ -409,19 +447,22 @@ class MontageActivity : Activity() {
         }
     }
 
+    private fun themeNames(): String =
+        if (activeThemes.isEmpty()) "busca livre" else activeThemes.joinToString(", ") { it.name }
+
     private fun showTags() {
-        val name = activeTheme?.name ?: "busca livre"
-        tagsView.text = "Hashtags do tema ($name) — toque para editar:\n" + tags.ifBlank { "(nenhuma)" }
+        tagsView.text = "Hashtags (${themeNames()}) — toque para editar:\n" + tags.ifBlank { "(nenhuma)" }
     }
 
     private fun editTags() {
         val box = CaptionUi.box(this, tags, "#hashtag1 #hashtag2", null, false)
         AlertDialog.Builder(this)
-            .setTitle("Hashtags: " + (activeTheme?.name ?: "busca livre"))
+            .setTitle("Hashtags: " + themeNames())
             .setView(box.view)
             .setPositiveButton("Salvar") { _, _ ->
                 tags = box.field.text.toString().trim()
-                Pexels.setTags(this, activeTheme, tags)
+                // com um tema só a mudança fica guardada; com vários, vale para este vídeo
+                if (activeThemes.size <= 1) Pexels.setTags(this, activeThemes.firstOrNull(), tags)
                 showTags()
             }
             .setNegativeButton("Cancelar", null)
